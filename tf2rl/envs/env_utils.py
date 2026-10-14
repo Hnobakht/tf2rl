@@ -1,4 +1,4 @@
-from gym.spaces import Discrete, Box
+from gymnasium.spaces import Discrete, Box
 
 
 def get_act_dim(env):

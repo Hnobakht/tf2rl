@@ -34,7 +34,7 @@ class OnPolicyTrainer(Trainer):
         episode_start_time = time.time()
         total_steps = np.array(0, dtype=np.int32)
         n_epoisode = 0
-        obs = self._env.reset()
+        obs, _ = self._env.reset()
 
         tf.summary.experimental.set_step(total_steps)
         while total_steps < self._max_steps:
@@ -47,7 +47,8 @@ class OnPolicyTrainer(Trainer):
                     env_act = np.clip(act, self._env.action_space.low, self._env.action_space.high)
                 else:
                     env_act = act
-                next_obs, reward, done, _ = self._env.step(env_act)
+                next_obs, reward, terminated, truncated, _ = self._env.step(env_act)
+                done = terminated or truncated
                 if self._show_progress:
                     self._env.render()
 
@@ -55,10 +56,7 @@ class OnPolicyTrainer(Trainer):
                 total_steps += 1
                 episode_return += reward
 
-                done_flag = done
-                if (hasattr(self._env, "_max_episode_steps") and
-                    episode_steps == self._env._max_episode_steps):
-                    done_flag = False
+                done_flag = terminated
                 self.local_buffer.add(
                     obs=obs, act=act, next_obs=next_obs,
                     rew=reward, done=done_flag, logp=logp, val=val)
@@ -66,8 +64,9 @@ class OnPolicyTrainer(Trainer):
 
                 if done or episode_steps == self._episode_max_steps:
                     tf.summary.experimental.set_step(total_steps)
-                    self.finish_horizon()
-                    obs = self._env.reset()
+                    bootstrap = 0. if terminated else self._policy.get_action_and_val(next_obs)[2]
+                    self.finish_horizon(last_val=bootstrap)
+                    obs, _ = self._env.reset()
                     n_epoisode += 1
                     fps = episode_steps / (time.time() - episode_start_time)
                     self.logger.info(
@@ -93,7 +92,8 @@ class OnPolicyTrainer(Trainer):
                 if total_steps % self._save_model_interval == 0:
                     self.checkpoint_manager.save()
 
-            self.finish_horizon(last_val=val)
+            self.finish_horizon(last_val=self._policy.get_action_and_val(obs)[2])
+            print("[DEBUG] Time to grad...")
 
             tf.summary.experimental.set_step(total_steps)
 
@@ -106,31 +106,48 @@ class OnPolicyTrainer(Trainer):
                 if self._normalize_obs:
                     self._obs_normalizer.experience(samples["obs"])
             with tf.summary.record_if(total_steps % self._save_summary_interval == 0):
-                for _ in range(self._policy.n_epoch):
-                    samples = self.replay_buffer._encode_sample(
-                        np.random.permutation(self._policy.horizon))
+                br = False
+                for idx_epoch in range(self._policy.n_epoch):
+                    samples = self.replay_buffer.get_all_transitions()
+                    order = np.random.permutation(len(samples["obs"]))
+                    samples = {key: value[order] for key, value in samples.items()}
                     if self._normalize_obs:
                         samples["obs"] = self._obs_normalizer(samples["obs"], update=False)
                     if self._policy.normalize_adv:
                         adv = (samples["adv"] - mean_adv) / (std_adv + 1e-8)
                     else:
                         adv = samples["adv"]
-                    for idx in range(int(self._policy.horizon / self._policy.batch_size)):
-                        target = slice(idx * self._policy.batch_size,
-                                       (idx + 1) * self._policy.batch_size)
-                        self._policy.train(
-                            states=samples["obs"][target],
-                            actions=samples["act"][target],
-                            advantages=adv[target],
-                            logp_olds=samples["logp"][target],
-                            returns=samples["ret"][target])
+                    if not br:
+                        for idx in range(int(self._policy.horizon / self._policy.batch_size)):
+                            target = slice(idx * self._policy.batch_size,
+                                           (idx + 1) * self._policy.batch_size)
+                            _, _, kl = self._policy.train(
+                            # _, kl = self._policy.train_actor(
+                                            states=samples["obs"][target],
+                                            actions=samples["act"][target],
+                                            advantages=adv[target],
+                                            logp_olds=samples["logp"][target],
+                                            returns=samples["ret"][target])
+                            if (kl > self._policy.target_kl).any():
+                                print("[DEBUG] The KL ({}) has reached the limit at batch: {} and  epoch: {}."
+                                      .format(kl.mean(), idx, idx_epoch))
+                                # br = True
+                                break
+                    # for idx_critic in range(int(self._policy.horizon / self._policy.batch_size)):
+                    #     target = slice(idx_critic * self._policy.batch_size,
+                    #                    (idx_critic + 1) * self._policy.batch_size)
+                    #     self._policy.train_critic(
+                    #                     states=samples["obs"][target],
+                    #                     returns=samples["ret"][target])
+                    # TODO: Should i continue with this epoch after the kl pass the target?
+                    if (kl > self._policy.target_kl).any():
+                        break
 
         tf.summary.flush()
 
     def finish_horizon(self, last_val=0):
         self.local_buffer.on_episode_end()
-        samples = self.local_buffer._encode_sample(
-            np.arange(self.local_buffer.get_stored_size()))
+        samples = self.local_buffer.get_all_transitions()
         rews = np.append(samples["rew"], last_val)
         vals = np.append(samples["val"], last_val)
 
@@ -149,49 +166,4 @@ class OnPolicyTrainer(Trainer):
         self.local_buffer.clear()
 
     def evaluate_policy(self, total_steps):
-        avg_test_return = 0.
-        avg_test_steps = 0
-        if self._save_test_path:
-            replay_buffer = get_replay_buffer(
-                self._policy, self._test_env, size=self._episode_max_steps)
-        for i in range(self._test_episodes):
-            episode_return = 0.
-            frames = []
-            obs = self._test_env.reset()
-            avg_test_steps += 1
-            for _ in range(self._episode_max_steps):
-                if self._normalize_obs:
-                    obs = self._obs_normalizer(obs, update=False)
-                act, _ = self._policy.get_action(obs, test=True)
-                act = (act if is_discrete(self._env.action_space) else
-                       np.clip(act, self._env.action_space.low, self._env.action_space.high))
-                next_obs, reward, done, _ = self._test_env.step(act)
-                avg_test_steps += 1
-                if self._save_test_path:
-                    replay_buffer.add(
-                        obs=obs, act=act, next_obs=next_obs,
-                        rew=reward, done=done)
-
-                if self._save_test_movie:
-                    frames.append(self._test_env.render(mode='rgb_array'))
-                elif self._show_test_progress:
-                    self._test_env.render()
-                episode_return += reward
-                obs = next_obs
-                if done:
-                    break
-            prefix = "step_{0:08d}_epi_{1:02d}_return_{2:010.4f}".format(
-                total_steps, i, episode_return)
-            if self._save_test_path:
-                save_path(replay_buffer.sample(self._episode_max_steps),
-                          os.path.join(self._output_dir, prefix + ".pkl"))
-                replay_buffer.clear()
-            if self._save_test_movie:
-                frames_to_gif(frames, prefix, self._output_dir)
-            avg_test_return += episode_return
-        if self._show_test_images:
-            images = tf.cast(
-                tf.expand_dims(np.array(obs).transpose(2, 0, 1), axis=3),
-                tf.uint8)
-            tf.summary.image('train/input_img', images, )
-        return avg_test_return / self._test_episodes, avg_test_steps / self._test_episodes
+        return super().evaluate_policy(total_steps)

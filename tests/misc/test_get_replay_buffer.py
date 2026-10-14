@@ -1,6 +1,6 @@
 import unittest
 
-import gym
+import gymnasium as gym
 
 from cpprb import ReplayBuffer
 from cpprb import PrioritizedReplayBuffer
@@ -20,8 +20,8 @@ class TestGetReplayBuffer(unittest.TestCase):
         cls.off_policy_agent = OffPolicyAgent(
             name="OffPolicyAgent",
             memory_capacity=cls.memory_capacity)
-        cls.discrete_env = gym.make("CartPole-v0")
-        cls.continuous_env = gym.make("Pendulum-v0")
+        cls.discrete_env = gym.make("CartPole-v1")
+        cls.continuous_env = gym.make("Pendulum-v1")
 
     def test_get_replay_buffer(self):
         # Replay Buffer

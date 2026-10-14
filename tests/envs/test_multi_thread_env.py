@@ -1,5 +1,5 @@
 import unittest
-import gym
+import gymnasium as gym
 import tensorflow as tf
 
 from tf2rl.envs.multi_thread_env import MultiThreadEnv
@@ -13,7 +13,7 @@ class TestMultiThreadEnv(unittest.TestCase):
         cls.max_episode_steps = 1000
 
         def env_fn():
-            return gym.make("Pendulum-v0")
+            return gym.make("Pendulum-v1")
 
         cls.continuous_sample_env = env_fn()
         cls.continuous_envs = MultiThreadEnv(
@@ -22,7 +22,7 @@ class TestMultiThreadEnv(unittest.TestCase):
             max_episode_steps=cls.max_episode_steps)
 
         def env_fn():
-            return gym.make("CartPole-v0")
+            return gym.make("CartPole-v1")
 
         cls.discrete_sample_env = env_fn()
         cls.discrete_envs = MultiThreadEnv(

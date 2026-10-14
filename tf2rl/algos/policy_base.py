@@ -32,10 +32,14 @@ class Policy(tf.keras.Model):
         import argparse
         if parser is None:
             parser = argparse.ArgumentParser(conflict_handler='resolve')
-        parser.add_argument('--n-warmup', type=int, default=int(1e4))
-        parser.add_argument('--batch-size', type=int, default=32)
-        parser.add_argument('--gpu', type=int, default=0,
-                            help='GPU id')
+        parser.add_argument('--n-warmup', type=int, default=int(1e4),
+                            help=" <default: %(default)s>")
+        parser.add_argument('--batch-size', type=int, default=128,
+                            help=" <default: %(default)s>")
+        parser.add_argument('--gpu', type=int, default=-1,
+                            help='GPU id  <default: %(default)s>')
+        parser.add_argument('--debug', action="store_true", help=" <default: %(default)s>")
+        parser.add_argument('--pixels', action="store_true", help=" Training from raw Pixels <default: %(default)s>")
         return parser
 
 
@@ -93,6 +97,7 @@ class OffPolicyAgent(Policy):
 
 
 class IRLPolicy(Policy):
+    requires_log_probs = False
     def __init__(
             self,
             n_training=1,
@@ -100,3 +105,17 @@ class IRLPolicy(Policy):
             **kwargs):
         self.n_training = n_training
         super().__init__(memory_capacity=memory_capacity, **kwargs)
+
+    @staticmethod
+    def get_argument(parser=None):
+        parser = Policy.get_argument(parser)
+        parser.add_argument('--lr-ail', type=float, default=1e-4,
+                            help='Learning rate for GAIL, GAIfO, AIRL. <default: %(default)s>')
+        parser.add_argument('--batch-size-ail', type=int, default=32, help=" <default: %(default)s>")
+        parser.add_argument('--units-ail', type=str, default="128,128",
+                            help='Discriminator architecture. use case: 128,128 or 400,300 <default: %(default)s>')
+        parser.add_argument('--n-training', type=int, default=1,
+                            help="Number of trainings for AIL <default: %(default)s>")
+        parser.add_argument('--gp-coef', type=float, default=0.,
+                            help='Gradient Penalty coefficient. <default: %(default)s>')
+        return parser

@@ -26,8 +26,6 @@ from __future__ import unicode_literals
 from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
-from future import standard_library
-standard_library.install_aliases()  # NOQA
 
 import argparse
 import datetime
@@ -36,6 +34,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import numpy as np
 
 
 def is_return_code_zero(args):
@@ -89,7 +88,7 @@ def prepare_output_dir(args, user_specified_dir=None, argv=None,
     :param default format is the basic format of ISO 8601.
     :return: Path of the output directory created by this function (str).
     """
-    if suffix is not "":
+    if suffix != "":
         suffix = "_" + suffix
     time_str = datetime.datetime.now().strftime(time_format) + suffix
     if user_specified_dir is not None:
@@ -98,12 +97,15 @@ def prepare_output_dir(args, user_specified_dir=None, argv=None,
                 raise RuntimeError(
                     '{} is not a directory'.format(user_specified_dir))
         outdir = os.path.join(user_specified_dir, time_str)
+        while os.path.exists(outdir):
+            outdir += "_"
         if os.path.exists(outdir):
             raise RuntimeError('{} exists'.format(outdir))
         else:
             os.makedirs(outdir)
     else:
-        outdir = tempfile.mkdtemp(prefix=time_str)
+        os.makedirs("results", exist_ok=True)
+        outdir = tempfile.mkdtemp(prefix=time_str, dir="results")
 
     # Save all the arguments
     with open(os.path.join(outdir, 'args.txt'), 'w') as f:
@@ -113,7 +115,9 @@ def prepare_output_dir(args, user_specified_dir=None, argv=None,
 
     # Save all the environment variables
     with open(os.path.join(outdir, 'environ.txt'), 'w') as f:
-        f.write(json.dumps(dict(os.environ)))
+        keys = ("CUDA_VISIBLE_DEVICES", "TF_DETERMINISTIC_OPS", "TF_NUM_INTRAOP_THREADS",
+                "TF_NUM_INTEROP_THREADS", "OMP_NUM_THREADS", "PYTHONHASHSEED")
+        f.write(json.dumps({key: os.environ[key] for key in keys if key in os.environ}))
 
     # Save the command
     with open(os.path.join(outdir, 'command.txt'), 'w') as f:
@@ -137,3 +141,87 @@ def prepare_output_dir(args, user_specified_dir=None, argv=None,
             f.write(subprocess.check_output('git diff'.split()))
 
     return outdir
+
+def prep_log_tag(args, *kwargs):
+    # print(args)
+    if len(kwargs) == 4 or len(kwargs) == 5:
+        ret = kwargs[0]
+        ret += '-v' if "eql" in kwargs[0] else '-u'
+        if isinstance(kwargs[2], list):
+            ret += str(kwargs[2]).replace('[','I').replace(']','I').replace(' ','').replace(',','-')
+            # ret += str(kwargs[2]).replace(' ', '').replace(',', '-')
+        elif isinstance(kwargs[2], tuple):
+            ret += str(kwargs[2][1]).replace('[','I').replace(']','I').replace(' ', '').replace(',', '-')
+            # ret += str(kwargs[2][1]).replace(' ', '').replace(',', '-')
+            ret += '-u' + str(kwargs[2][0]).replace('[','I').replace(']','I').replace(' ', '').replace(',', '-')
+            # ret += '-u' +  str(kwargs[2][0]).replace(' ', '').replace(',', '-')
+        else:
+            raise NotImplementedError
+        if hasattr(args, "latent_units"):
+            ret += '-ln' + str(args.latent_units)
+            if hasattr(args, "units_decoder"):
+                ret += '-dI' + args.units_decoder.replace(' ','').replace(',','-') + "I"
+            elif hasattr(args, "v"):
+                ret += '-dI' + str(args.v).replace(',','-') + 'I'
+                ret += '-dout' + str(args.dropout).replace('.', '').replace(',', '-')
+                # ret += '-eXI' + args.exclude.replace(',', '-') + 'I'
+            else:
+                raise NotImplementedError("dump in prep_log_tag")
+            ret += '-kl' + str(args.kl_target).replace('.','')
+            ret += '-nt' + str(args.n_training)
+        ret += '-b' + str(args.batch_size_ail)
+        ret += '-lr' + np.format_float_scientific(args.lr_ail).replace('.', '').replace('-','')
+        if "eql" in kwargs[0]:
+            ret += '-udp' + str(args.update_delay)
+            ret += '-dout' + str(args.dropout).replace('.','').replace(',','-')
+            if args.exclude:
+                # ret += '-ex' + args.exclude.replace(',','-')
+                ret += '-eXI' + args.exclude.replace(',', '-') + 'I'
+        ret += '-nois' + str(args.discriminator_noise).replace('.','')
+        ret += '-epis'
+        ret += 'T' if args.absorbed_state_disable else 'F'
+        if hasattr(args,'state_only') and args.state_only:
+            ret += '-SO'
+        if args.random_epoch_n > 0:
+            ret += '-rane' + str(args.random_epoch_n)
+        if args.memory_capacity < 1e6:
+            ret += '-mem' + np.format_float_scientific(args.memory_capacity).replace('.', '').replace('+','')
+        if hasattr(args, "gp_coef") and args.gp_coef > 0:
+            ret += '-gp' + str(args.gp_coef).replace('.', '')
+
+        #Starting the policy
+        ret += '_' + kwargs[1]
+        ret += '-u' + str(kwargs[3]).replace('[','I').replace(']','I').replace(' ','').replace(',','-')
+        # ret += '-u' + str(kwargs[3]).replace(' ', '').replace(',', '-')
+        ret += '-b' + str(args.batch_size)
+        ret += '-lr' + np.format_float_scientific(args.lr).replace('.', '').replace('-','')
+        if "sac" in kwargs[1]:
+            if args.auto_alpha_disable:
+                ret += '-lra' + np.format_float_scientific(args.lr_alpha).replace('.', '').replace('-','')
+            else:
+                ret += '-alpha' + str(args.alpha)
+        ret += '_' + args.env_name.replace(':', '-')
+    elif len(kwargs) == 2 or len(kwargs) == 3:
+        ret = kwargs[0]
+        ret += '-u' + str(kwargs[1]).replace('[', 'I').replace(']', 'I').replace(' ', '').replace(',', '-')
+        # ret += '-u' + str(kwargs[1]).replace(' ', '').replace(',', '-')
+        ret += '-b' + str(args.batch_size)
+        ret += '-lr' + np.format_float_scientific(args.lr).replace('.', '').replace('-', '')
+        if "sac" in kwargs[1]:
+            if args.auto_alpha_disable:
+                ret += '-lra' + np.format_float_scientific(args.lr_alpha).replace('.', '').replace('-', '')
+            else:
+                ret += '-alpha' + str(args.alpha)
+        if args.reward_dir:
+            ret += '-ExtReward'
+        ret += '_' + args.env_name.replace(':', '')
+    else:
+        raise NotImplementedError
+
+    if len(kwargs) == 3:
+        ret += '_' + str(kwargs[2])
+    if len(kwargs) == 5:
+        ret += '_' + str(kwargs[4])
+
+    _ = [print(str(i) + " = < " + str(j) + " >") for i,j in args._get_kwargs()]
+    return '/' + ret

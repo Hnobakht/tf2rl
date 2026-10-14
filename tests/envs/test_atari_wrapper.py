@@ -3,7 +3,7 @@ import sys
 import unittest
 
 import numpy as np
-import gym
+import gymnasium as gym
 
 from tf2rl.envs.atari_wrapper import wrap_dqn
 

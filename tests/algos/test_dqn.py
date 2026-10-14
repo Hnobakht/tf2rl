@@ -52,7 +52,7 @@ class TestNoisyDQN(CommonOffPolDiscreteAlgos):
 
     def test_get_action_greedy(self):
         states = np.zeros(
-            shape=(self.batch_size, self.env.reset().astype(np.float32).shape[0]), dtype=np.float32)
+            shape=(self.batch_size, self.env.reset()[0].astype(np.float32).shape[0]), dtype=np.float32)
         q_values = np.array([self.agent.q_func(np.expand_dims(state, axis=0)).numpy()[0] for state in states])
         self.assertEqual(np.prod(np.all(q_values == q_values[0, :], axis=0)), 0)
 

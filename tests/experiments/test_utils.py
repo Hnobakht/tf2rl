@@ -2,7 +2,7 @@ import unittest
 
 import os
 import numpy as np
-import gym
+import gymnasium as gym
 
 from tf2rl.misc.get_replay_buffer import get_replay_buffer
 from tf2rl.experiments.utils import save_path, restore_latest_n_traj
@@ -12,7 +12,7 @@ from tf2rl.algos.dqn import DQN
 class TestUtils(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.env = gym.make("CartPole-v0")
+        cls.env = gym.make("CartPole-v1")
         policy = DQN(
             state_shape=cls.env.observation_space.shape,
             action_dim=cls.env.action_space.n,
@@ -39,7 +39,7 @@ class TestUtils(unittest.TestCase):
                              "step_0_epi_{}_return_0.0.pkl").format(epi))
         data = restore_latest_n_traj(self.output_dir)
         self.assertEqual(data["obses"].shape[0],
-                         (self.replay_buffer.get_buffer_size() - 1) * n_store_episodes)
+                         (self.replay_buffer.get_buffer_size()) * n_store_episodes)
 
 
 if __name__ == '__main__':

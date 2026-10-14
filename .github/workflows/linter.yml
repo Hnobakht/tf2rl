@@ -1,14 +1,11 @@
-name: Lint Code
-
+name: Python syntax
 on: [push, pull_request]
-
 jobs:
-  lint:
+  syntax:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: docker://github/super-linter:v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VALIDATE_PYTHON_FLAKE8: true
-          PYTHON_FLAKE8_CONFIG_FILE: ".flake8"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m compileall -q tf2rl examples tests

@@ -1,93 +1,96 @@
+"""Dense GAIL with its original log(D) policy reward."""
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Dense
 
 from tf2rl.algos.policy_base import IRLPolicy
-from tf2rl.networks.spectral_norm_dense import SNDense
+from tf2rl.algos.irl_losses import (gail_loss, singular_penalty, agent_gradient_penalty,
+                                   js_divergence)
 
 
 class Discriminator(tf.keras.Model):
-    def __init__(self, state_shape, action_dim, units=(32, 32),
-                 enable_sn=False, output_activation="sigmoid",
-                 name="Discriminator"):
+    def __init__(self, state_shape, action_dim, units=(32, 32), enable_sn=False,
+                 output_activation='sigmoid', name="Discriminator", activation='relu',
+                 w_ini='orthogonal'):
         super().__init__(name=name)
+        # enable_sn was ignored by the original dense GAIL; retain its behavior.
+        self._enable_sn = enable_sn
+        self.l1 = tf.keras.layers.Dense(units[0], name="L1", activation=activation,
+                                        kernel_initializer=w_ini)
+        self.l2 = tf.keras.layers.Dense(units[1], name="L2", activation=activation,
+                                        kernel_initializer=w_ini)
+        self.l3 = tf.keras.layers.Dense(1, name="L3", activation=output_activation)
+        self(tf.zeros((1, state_shape[0] + action_dim)), training=False)
 
-        DenseClass = SNDense if enable_sn else Dense
-        self.l1 = DenseClass(units[0], name="L1", activation="relu")
-        self.l2 = DenseClass(units[1], name="L2", activation="relu")
-        self.l3 = DenseClass(1, name="L3", activation=output_activation)
-
-        dummy_state = tf.constant(
-            np.zeros(shape=(1,)+state_shape, dtype=np.float32))
-        dummy_action = tf.constant(
-            np.zeros(shape=(1, action_dim), dtype=np.float32))
-        with tf.device("/cpu:0"):
-            self(tf.concat((dummy_state, dummy_action), axis=1))
-
-    def call(self, inputs):
-        features = self.l1(inputs)
-        features = self.l2(features)
-        return self.l3(features)
+    def call(self, inputs, training=None):
+        return self.l3(self.l2(self.l1(inputs)))
 
     def compute_reward(self, inputs):
-        return tf.math.log(self(inputs) + 1e-8)
+        return tf.math.log(self(inputs, training=False) + 1e-8)
 
 
 class GAIL(IRLPolicy):
-    def __init__(
-            self,
-            state_shape,
-            action_dim,
-            units=[32, 32],
-            lr=0.001,
-            enable_sn=False,
-            name="GAIL",
-            **kwargs):
-        super().__init__(name=name, n_training=1, **kwargs)
-        self.disc = Discriminator(
-            state_shape=state_shape, action_dim=action_dim,
-            units=units, enable_sn=enable_sn)
-        self.optimizer = tf.keras.optimizers.Adam(
-            learning_rate=lr, beta_1=0.5)
+    equation_discriminator = False
+    requires_log_probs = False
 
-    def train(self, agent_states, agent_acts,
-              expert_states, expert_acts, **kwargs):
-        loss, accuracy, js_divergence = self._train_body(
-            agent_states, agent_acts, expert_states, expert_acts)
-        tf.summary.scalar(name=self.policy_name+"/DiscriminatorLoss", data=loss)
-        tf.summary.scalar(name=self.policy_name+"/Accuracy", data=accuracy)
-        tf.summary.scalar(name=self.policy_name+"/JSdivergence", data=js_divergence)
+    def __init__(self, state_shape, action_dim, units=(32, 32), lr=0.001,
+                 enable_sn=False, name="GAIL", is_debug=False, n_training=1,
+                 grad_penalty_coeff=0, is_absorbed_state=False, update_delay=1, **kwargs):
+        super().__init__(name=name, n_training=n_training, **kwargs)
+        if update_delay < 1 or grad_penalty_coeff < 0:
+            raise ValueError("update_delay must be positive and GP coefficient nonnegative")
+        self._is_debug = is_debug
+        self._is_absorbed_state = is_absorbed_state
+        self.update_delay = update_delay
+        self.grad_penalty_coeff = grad_penalty_coeff
+        self._is_grad_penalty = grad_penalty_coeff > 0
+        self.disc = self._make_discriminator(state_shape, action_dim, units, enable_sn)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr, beta_1=0.5)
 
-    def _compute_js_divergence(self, fake_logits, real_logits):
-        m = (fake_logits + real_logits) / 2.
-        return tf.reduce_mean((
-            fake_logits * tf.math.log(fake_logits / m + 1e-8) + real_logits * tf.math.log(real_logits / m + 1e-8)) / 2.)
+    def _make_discriminator(self, state_shape, action_dim, units, enable_sn):
+        return Discriminator(state_shape, action_dim, units, enable_sn)
+
+    def train(self, agent_states, agent_acts, expert_states, expert_acts, itr=1, **kwargs):
+        if itr % self.update_delay:
+            return None
+        result = self._train_body(agent_states, agent_acts, expert_states, expert_acts)
+        for label, value in zip(("DiscriminatorLoss", "Accuracy", "JSdivergence"), result):
+            tf.summary.scalar(self.policy_name + "/" + label, value)
+        if self._is_debug:
+            for variable in self.disc.weights:
+                tf.summary.histogram(self.policy_name + "/" + variable.name, variable)
+        return result
+
+    def _after_update(self):
+        pass
 
     @tf.function
-    def _train_body(self, agent_states, agent_acts, expert_states, expert_acts):
-        epsilon = 1e-8
+    def _train_body(self, agent_states, agent_acts, expert_states, expert_acts, l1_regularizers=0):
         with tf.device(self.device):
             with tf.GradientTape() as tape:
-                real_logits = self.disc(tf.concat((expert_states, expert_acts), axis=1))
-                fake_logits = self.disc(tf.concat((agent_states, agent_acts), axis=1))
-                loss = -(tf.reduce_mean(tf.math.log(real_logits + epsilon)) +
-                         tf.reduce_mean(tf.math.log(1. - fake_logits + epsilon)))
-            grads = tape.gradient(loss, self.disc.trainable_variables)
-            self.optimizer.apply_gradients(
-                zip(grads, self.disc.trainable_variables))
+                real = self.disc(tf.concat((expert_states, expert_acts), axis=1))
+                fake = self.disc(tf.concat((agent_states, agent_acts), axis=1))
+                loss = gail_loss(real, fake)
+                if self._is_grad_penalty:
+                    loss += self.grad_penalty_coeff * agent_gradient_penalty(
+                        self.disc, tf.concat((agent_states, agent_acts), axis=1))
+                if self.equation_discriminator:
+                    # Match the historical last-call model.losses semantics (also
+                    # when the GP's third forward call uses a fresh dropout mask).
+                    loss += singular_penalty(self.disc)
+            variables = self.disc.trainable_variables
+            self.optimizer.apply_gradients(zip(tape.gradient(loss, variables), variables))
+            self._after_update()
+        accuracy = (tf.reduce_mean(tf.cast(real >= 0.5, tf.float32))
+                    + tf.reduce_mean(tf.cast(fake < 0.5, tf.float32))) / 2.
+        return loss, accuracy, js_divergence(fake, real)
 
-        accuracy = (tf.reduce_mean(tf.cast(real_logits >= 0.5, tf.float32)) / 2. +
-                    tf.reduce_mean(tf.cast(fake_logits < 0.5, tf.float32)) / 2.)
-        js_divergence = self._compute_js_divergence(
-            fake_logits, real_logits)
-        return loss, accuracy, js_divergence
+    _compute_js_divergence = staticmethod(js_divergence)
 
-    def inference(self, states, actions, next_states):
-        if states.ndim == actions.ndim == 1:
-            states = np.expand_dims(states, axis=0)
-            actions = np.expand_dims(actions, axis=0)
-        inputs = np.concatenate((states, actions), axis=1)
-        return self._inference_body(inputs)
+    def inference(self, states, actions, next_states=None):
+        states, actions = np.asarray(states, np.float32), np.asarray(actions, np.float32)
+        if states.ndim == 1:
+            states, actions = states[None], actions[None]
+        return self._inference_body(np.concatenate((states, actions), axis=1))
 
     @tf.function
     def _inference_body(self, inputs):
@@ -96,6 +99,4 @@ class GAIL(IRLPolicy):
 
     @staticmethod
     def get_argument(parser=None):
-        parser = IRLPolicy.get_argument(parser)
-        parser.add_argument('--enable-sn', action='store_true')
-        return parser
+        return IRLPolicy.get_argument(parser)

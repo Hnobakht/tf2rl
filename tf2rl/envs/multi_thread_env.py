@@ -34,7 +34,7 @@ class MultiThreadEnv(object):
 
         # collects environment information
         sample_env = env_fn()
-        sample_obs = sample_env.reset()
+        sample_obs, _ = sample_env.reset()
         self._sample_env = sample_env
         self.observation_shape = sample_obs.shape
         # episode time limit
@@ -47,6 +47,7 @@ class MultiThreadEnv(object):
         self.list_obs = [None] * self.batch_size
         self.list_rewards = [None] * self.batch_size
         self.list_done = [None] * self.batch_size
+        self.list_boundary = [False] * self.batch_size
         self.list_steps = [0] * self.batch_size
 
         self.py_reset()
@@ -100,12 +101,13 @@ class MultiThreadEnv(object):
         """
         def _process(offset):
             for idx_env in range(offset, offset+self.batch_thread):
-                new_obs, reward, done, _ = self.envs[idx_env].step(
+                new_obs, reward, terminated, truncated, _ = self.envs[idx_env].step(
                     actions[idx_env].numpy())
                 self.list_obs[idx_env] = new_obs
                 self.list_rewards[idx_env] = reward
-                self.list_done[idx_env] = done
+                self.list_done[idx_env] = terminated
                 self.list_steps[idx_env] += 1
+                self.list_boundary[idx_env] = terminated or truncated
 
         threads = []
         for i in range(self.thread_pool):
@@ -117,18 +119,14 @@ class MultiThreadEnv(object):
         for t in threads:
             t.join()
 
-        for i in range(self.batch_size):
-            if self.list_steps[i] == self.max_episode_steps:
-                self.list_done[i] = False
-
         obs = np.stack(self.list_obs, axis=0)
         reward = np.stack(self.list_rewards, axis=0).astype(np.float32)
         done = np.stack(self.list_done, axis=0).astype(np.float32)
 
         # TODO reset from multiple threads
         for i in range(self.batch_size):
-            if self.list_done[i] or self.list_steps[i] == self.max_episode_steps:
-                self.list_obs[i] = self.envs[i].reset()
+            if self.list_boundary[i] or self.list_steps[i] >= self.max_episode_steps:
+                self.list_obs[i], _ = self.envs[i].reset()
                 self.list_steps[i] = 0
 
         return obs, reward, done
@@ -139,7 +137,7 @@ class MultiThreadEnv(object):
 
     def py_reset(self):
         for idx_env, env in enumerate(self.envs):
-            obs = env.reset()
+            obs, _ = env.reset()
             # TODO: Allow flexible data type
             self.list_obs[idx_env] = obs.astype(np.float32)
 

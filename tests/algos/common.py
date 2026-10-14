@@ -1,14 +1,14 @@
 import unittest
 import numpy as np
-import gym
+import gymnasium as gym
 
 
 class CommonAlgos(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # TODO: Remove dependencies to gym
-        cls.discrete_env = gym.make("CartPole-v0")
-        cls.continuous_env = gym.make("Pendulum-v0")
+        cls.discrete_env = gym.make("CartPole-v1")
+        cls.continuous_env = gym.make("Pendulum-v1")
         cls.batch_size = 32
         cls.agent = None
 
@@ -25,9 +25,11 @@ class CommonOffPolAlgos(CommonAlgos):
         if self.agent is None:
             return
         # Single input
-        state = self.env.reset().astype(np.float32)
+        state = self.env.reset()[0].astype(np.float32)
         action_train = self.agent.get_action(state, test=False)
+        action_train = action_train[0] if isinstance(action_train, tuple) else action_train
         action_test = self.agent.get_action(state, test=True)
+        action_test = action_test[0] if isinstance(action_test, tuple) else action_test
         if self.is_discrete:
             self.assertTrue(isinstance(action_train, (np.int32, np.int64, int)))
             self.assertTrue(isinstance(action_test, (np.int32, np.int64, int)))
@@ -39,7 +41,9 @@ class CommonOffPolAlgos(CommonAlgos):
         states = np.zeros(
             shape=(self.batch_size, state.shape[0]), dtype=np.float32)
         actions_train = self.agent.get_action(states, test=False)
+        actions_train = actions_train[0] if isinstance(actions_train, tuple) else actions_train
         actions_test = self.agent.get_action(states, test=True)
+        actions_test = actions_test[0] if isinstance(actions_test, tuple) else actions_test
 
         if self.is_discrete:
             self.assertEqual(
@@ -57,9 +61,11 @@ class CommonOffPolAlgos(CommonAlgos):
             return
         # Multiple inputs
         states = np.zeros(
-            shape=(self.batch_size, self.env.reset().astype(np.float32).shape[0]), dtype=np.float32)
+            shape=(self.batch_size, self.env.reset()[0].astype(np.float32).shape[0]), dtype=np.float32)
         actions_train = self.agent.get_action(states, test=False)
+        actions_train = actions_train[0] if isinstance(actions_train, tuple) else actions_train
         actions_test = self.agent.get_action(states, test=True)
+        actions_test = actions_test[0] if isinstance(actions_test, tuple) else actions_test
 
         # All actions should be same if `test=True`, and not same if `test=False`
         if self.is_discrete:
@@ -122,7 +128,7 @@ class CommonOnPolActorCritic(CommonAlgos):
         if self.agent is None:
             return
         # Single input
-        state = self.env.reset().astype(np.float32)
+        state = self.env.reset()[0].astype(np.float32)
         action_train, logp_train = self.agent.get_action(state, test=False)
         action_test, logp_test = self.agent.get_action(state, test=True)
         if self.is_discrete:
@@ -155,7 +161,7 @@ class CommonOnPolActorCritic(CommonAlgos):
     def test_train(self):
         if self.agent is None:
             return
-        state = self.env.reset().astype(np.float32)
+        state = self.env.reset()[0].astype(np.float32)
         obses = np.zeros(
             shape=(self.batch_size,) + state.shape,
             dtype=np.float32)
