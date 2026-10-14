@@ -157,6 +157,3 @@ Current checkpoints contain policy/discriminator objects and optimizer state. Re
 environment and RNG state are not saved, so continuation is not bitwise replayable.
 Older checkpoints may require explicit weight mapping. No original demonstrations,
 complete experiment configs or result artifacts were available for paper replication.
-
-
-first install all the requerments in the new .ven-modern. then run SAC to generate expert data. then run normal GAIL to make sure it works. then run the EQN-GAIL to make sure my algorithm works. then make sure the absorbing state is coded correctly. also i want to see records in tensorboard. fix the code to make each step works properly.
