@@ -45,6 +45,7 @@ class GAIL(IRLPolicy):
         self._is_grad_penalty = grad_penalty_coeff > 0
         self.disc = self._make_discriminator(state_shape, action_dim, units, enable_sn)
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr, beta_1=0.5)
+        self.optimizer.build(self.disc.trainable_variables)
 
     def _make_discriminator(self, state_shape, action_dim, units, enable_sn):
         return Discriminator(state_shape, action_dim, units, enable_sn)

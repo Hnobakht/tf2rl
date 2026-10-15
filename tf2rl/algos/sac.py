@@ -18,6 +18,8 @@ class CriticQ(tf.keras.Model):
             self.base_layers.append(Dense(unit, activation='relu', kernel_initializer=initializer))
             self.base_layers.append(LayerNormalization())  # TODO: For GAIL_EQL
         self.out_layer = Dense(1, name="Q", activation='linear', kernel_initializer=initializer)
+        for index, layer in enumerate(self.base_layers):
+            setattr(self, f"hidden_{index}", layer)
 
         # dummy_state = tf.constant(np.zeros(shape=(1,) + state_shape, dtype=np.float32))
         # dummy_action = tf.constant(np.zeros(shape=[1, action_dim], dtype=np.float32))

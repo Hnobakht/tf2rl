@@ -110,10 +110,28 @@ These fixes affect broken or ambiguous executions and can change numerical resul
    boundary behavior and is separate from the EQN off-policy objective.
 10. Custom MuJoCo tasks use native MuJoCo/Gymnasium rather than mujoco-py. Original
     XML geometry, rewards, reset-distribution formulas and observation order remain.
-    Deprecated `coordinate="local"` is removed in memory (local is the default),
-    RNG `randn` becomes `standard_normal`, and observation width is inferred without
+    The eight legacy global-coordinate Hopper/Walker assets are converted in memory
+    to local coordinates by subtracting parent/body origins. Their body frames have
+    no rotations; rotated frames are rejected. Tests compare compiled body/geom world
+    positions to the original XML coordinates. RNG `randn` becomes `standard_normal`, and observation width is inferred without
     the old constructor's random step. Physics versions and seeded RNG sequences
     cannot be assumed equivalent. Time counters in maze/rllab tasks are truncations.
+11. Keras 3 list tracking does not provide TensorFlow checkpoint paths for every
+    nested layer. EQN layers, SAC actors and critic hidden layers now also have
+    explicit attributes. Full checkpoint tests compare online and target weights
+    and require optimizer state to be consumed. Checkpoints from the earlier
+    incomplete modernization may have omitted target weights and should be regenerated.
+12. State-only EQN-AIRL output L1 is expressed as the same TensorFlow absolute-value
+    sum inside `call`; this avoids Keras 3 integer-coefficient/tracing failures.
+    Its nonzero coefficient value and gradients are tested analytically.
+13. Summary writers are scoped to each trainer invocation and restore the caller's
+    writer/step. Metrics flush after evaluations for live TensorBoard viewing.
+    The TensorBoard 2.18 runtime requires setuptools below 82 because it imports
+    the removed `pkg_resources` API. This bound is a dependency repair.
+14. Retained D2RL-SAC construction now supplies twin Q targets and a joint critic
+    optimizer required by its current SAC parent. Its unreachable V-network setup
+    and broken `CriticV` import were removed. This changes that legacy extension's
+    wiring; it does not enter the EQN/GAIL training paths.
 
 These repairs are explicitly disclosed; full learning-curve equivalence is not claimed.
 Unsupported research schedules and incompatible DAC replay modes raise descriptive

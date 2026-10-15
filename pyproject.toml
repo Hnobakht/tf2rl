@@ -14,6 +14,9 @@ dependencies = [
   "tensorflow>=2.18.1,<2.19",
   "tensorflow-probability>=0.25,<0.26",
   "tf-keras>=2.18,<2.19",
+  "tensorboard>=2.18,<2.19",
+  # TensorBoard 2.18 still imports pkg_resources (removed in setuptools 82).
+  "setuptools>=77,<82",
   "gymnasium>=1.2,<1.4",
   "numpy>=1.26,<2.1",
   "cpprb>=11,<12",

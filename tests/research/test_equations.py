@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import tensorflow as tf
 
-from tf2rl.networks.eqn import EquationLayer
+from tf2rl.networks.eqn import EquationLayer, EquationOutput
 from tf2rl.algos.irl_losses import airl_loss, gail_loss, agent_gradient_penalty
 from tf2rl.algos.sac_irl import dac_target, dac_actor_loss
 
@@ -50,6 +50,25 @@ def test_exclusions_advance_binary_operator_inputs_correctly():
     layer.b.assign(tf.range(10, dtype=tf.float32))
     np.testing.assert_allclose(layer(tf.zeros((1, 1))), [[0, 9, 3.1/4.1, 5, 169, 8.1/9.1]])
     assert layer.losses[0] == 0
+
+
+def test_output_l1_value_and_gradient_inside_tf_function():
+    layer = EquationOutput(lmbda=.25, regularize=True)
+    layer(tf.zeros((1, 2)))
+    layer.w.assign([[2.], [-3.]])
+    layer.b.assign([4.])
+
+    @tf.function
+    def loss_and_gradients():
+        with tf.GradientTape() as tape:
+            layer(tf.zeros((2, 2)))
+            loss = tf.add_n(layer.losses)
+        return loss, tape.gradient(loss, layer.trainable_variables)
+
+    loss, gradients = loss_and_gradients()
+    np.testing.assert_allclose(loss, .25 * 9)
+    np.testing.assert_allclose(gradients[0], [[.25], [-.25]])
+    np.testing.assert_allclose(gradients[1], [.25])
 
 
 def test_airl_loss_values_and_gradients():

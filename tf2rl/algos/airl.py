@@ -47,6 +47,7 @@ class AIRL(IRLPolicy):
         self.rew_net = self._make_reward(state_shape, action_dim, units, enable_sn)
         self.val_net = StateModel(state_shape, units, enable_sn, "linear", name="val_net")
         self.rew_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+        self.rew_optimizer.build(self.rew_net.trainable_variables + self.val_net.trainable_variables)
 
     def _make_reward(self, state_shape, action_dim, units, enable_sn):
         if self._state_only:

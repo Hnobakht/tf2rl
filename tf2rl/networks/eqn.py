@@ -80,18 +80,22 @@ class EquationOutput(tf.keras.layers.Layer):
         self.w_initializer = tf.keras.initializers.get(w_initializer)
         self.b_initializer = tf.keras.initializers.get(b_initializer)
         self.activation = tf.keras.activations.get(activation)
-        self.regularizer = tf.keras.regularizers.L1(lmbda) if regularize else None
+        # Make the coefficient floating point even for integer defaults and keep
+        # the same L1 expression in the traced graph with the singular penalties.
+        self.lmbda = float(lmbda) if regularize else 0.
         self.constraint = constraint if regularize else None
 
     def build(self, input_shape):
         self.w = self.add_weight(name="w", shape=(input_shape[-1], 1),
-                                 initializer=self.w_initializer, regularizer=self.regularizer,
-                                 constraint=self.constraint)
+                                 initializer=self.w_initializer, constraint=self.constraint)
         self.b = self.add_weight(name="b", shape=(1,), initializer=self.b_initializer,
-                                 regularizer=self.regularizer, constraint=self.constraint)
+                                 constraint=self.constraint)
         super().build(input_shape)
 
     def call(self, inputs, training=None, l1_regularizers=0):
+        if self.lmbda:
+            self.add_loss(tf.cast(self.lmbda, self.w.dtype)
+                          * (tf.reduce_sum(tf.abs(self.w)) + tf.reduce_sum(tf.abs(self.b))))
         return self.activation(tf.matmul(inputs, self.w) + self.b)
 
 
@@ -118,9 +122,15 @@ class EquationNetwork(tf.keras.Model):
         for index, (width, exclusions, rate) in enumerate(zip(self.v, self.exclude, rates)):
             layer = EquationLayer(w_init, b_init, width, exclude=exclusions,
                                   constraint=constraint, name=f"equation_{index}")
+            # Keras 3 tracks the variables for optimization when a layer is in a
+            # plain list, but TensorFlow checkpoints only discover attribute
+            # dependencies.  Give every equation layer a stable trackable path.
+            setattr(self, f"equation_{index}", layer)
             self.eql_layers.append(layer)
             if rate:
-                self.eql_layers.append(tf.keras.layers.Dropout(rate))
+                dropout = tf.keras.layers.Dropout(rate, name=f"dropout_{index}")
+                setattr(self, f"dropout_{index}", dropout)
+                self.eql_layers.append(dropout)
         self.layer_out = EquationOutput(w_init, b_init, activation=output_activation,
                                         lmbda=lmbda, regularize=regularize_output,
                                         constraint=constraint, name="equation_output")

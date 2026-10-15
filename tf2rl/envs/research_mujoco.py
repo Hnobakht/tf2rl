@@ -13,6 +13,63 @@ import mujoco
 import numpy as np
 
 
+def _vector(value):
+    """Parse the simple numeric expressions used by the legacy MuJoCo assets."""
+    values = []
+    for token in value.split():
+        factors = token.split("/")
+        number = float(factors[0])
+        for denominator in factors[1:]:
+            number /= float(denominator)
+        values.append(number)
+    return np.asarray(values, dtype=np.float64)
+
+
+def _format_vector(value):
+    return " ".join(f"{number:.17g}" for number in value)
+
+
+def _convert_global_coordinates(xml):
+    """Convert translation-only legacy global coordinates to local MJCF.
+
+    The Hopper and Walker2d research assets predate MuJoCo 2.3 and use the
+    removed ``coordinate=global`` compiler mode.  Their body frames have no
+    rotations, so the old compiler conversion is exactly a parent-origin
+    subtraction for positions and ``fromto`` endpoints.
+    """
+    compiler = xml.find("compiler")
+    if compiler is None or compiler.attrib.get("coordinate", "local") != "global":
+        return
+    compiler.attrib.pop("coordinate")
+
+    def convert_element(element, origin):
+        if "pos" in element.attrib:
+            element.attrib["pos"] = _format_vector(_vector(element.attrib["pos"]) - origin)
+        if "fromto" in element.attrib:
+            endpoints = _vector(element.attrib["fromto"]).reshape(2, 3) - origin
+            element.attrib["fromto"] = _format_vector(endpoints.reshape(-1))
+
+    def convert_body(body, parent_origin):
+        if {'quat', 'euler', 'axisangle', 'xyaxes', 'zaxis'} & body.attrib.keys():
+            raise ValueError('Global-coordinate conversion only supports unrotated body frames')
+        body_origin = _vector(body.attrib.get("pos", "0 0 0"))
+        body.attrib["pos"] = _format_vector(body_origin - parent_origin)
+        for child in body:
+            if child.tag == "body":
+                convert_body(child, body_origin)
+            else:
+                convert_element(child, body_origin)
+
+    worldbody = xml.find("worldbody")
+    if worldbody is not None:
+        world_origin = np.zeros(3, dtype=np.float64)
+        for child in worldbody:
+            if child.tag == "body":
+                convert_body(child, world_origin)
+            else:
+                convert_element(child, world_origin)
+
+
 class MujocoEnv(GymnasiumMujocoEnv):
     def __init__(self, model_path, frame_skip, render_mode=None, **kwargs):
         if hasattr(model_path, "root"):
@@ -28,10 +85,7 @@ class MujocoEnv(GymnasiumMujocoEnv):
         xml = ET.fromstring(self._research_xml)
         compiler = xml.find("compiler")
         if compiler is not None:
-            # 'local' is now the default; global coordinates would need a conversion.
-            coordinate = compiler.attrib.pop("coordinate", "local")
-            if coordinate != "local":
-                raise ValueError("Research MuJoCo assets must use local coordinates")
+            _convert_global_coordinates(xml)
         self._research_xml = ET.tostring(xml, encoding="unicode")
         self.metadata = {"render_modes": ["human", "rgb_array", "depth_array"]}
         super().__init__(str(path), frame_skip,

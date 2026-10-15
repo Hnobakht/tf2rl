@@ -4,6 +4,7 @@ import copy
 import logging
 from pathlib import Path
 import time
+from functools import wraps
 
 import numpy as np
 import tensorflow as tf
@@ -14,6 +15,15 @@ from tf2rl.experiments.utils import save_path, frames_to_gif
 from tf2rl.misc.get_replay_buffer import get_replay_buffer
 from tf2rl.misc.prepare_output_dir import prepare_output_dir
 from tf2rl.misc.initialize_logger import initialize_logger
+
+
+def with_summary_writer(method):
+    """Keep each trainer's writer and step scoped to its own execution."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self.writer.as_default(step=0):
+            return method(self, *args, **kwargs)
+    return wrapped
 
 
 class Trainer:
@@ -41,7 +51,6 @@ class Trainer:
         self.logger = initialize_logger(logging_level=logging.getLevelName(args.logging_level),
                                          output_dir=self._output_dir)
         self.writer = tf.summary.create_file_writer(self._output_dir)
-        self.writer.set_as_default()
         self._set_check_point(args.model_dir)
         if args.evaluate and args.model_dir is None:
             raise ValueError("Evaluation requires --model-dir")
@@ -73,6 +82,7 @@ class Trainer:
             self._obs_normalizer.experience(obs[None])
         return self._obs_normalizer(obs, update=False)
 
+    @with_summary_writer
     def __call__(self):
         if self._evaluate:
             return self.evaluate_policy_continuously()
@@ -121,6 +131,9 @@ class Trainer:
             reward, length = self.evaluate_policy(total_steps)
             tf.summary.scalar("Common/average_test_return", reward)
             tf.summary.scalar("Common/average_test_episode_length", length)
+            self.logger.info("Step %d: evaluation return %.3f, length %.1f",
+                             total_steps, reward, length)
+            self.writer.flush()
         if total_steps % self._save_model_interval == 0:
             self.checkpoint_manager.save()
 
@@ -128,6 +141,7 @@ class Trainer:
         # Retain the historical one-shot implementation despite the old name.
         return self.evaluate_policy(0)
 
+    @with_summary_writer
     def evaluate_policy(self, total_steps):
         returns, lengths = [], []
         horizon = self._horizon(self._test_env)

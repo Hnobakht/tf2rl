@@ -11,10 +11,10 @@ and DAC absorbing-state targets. It does **not** substitute a standard-library
 imitation algorithm. [Scientific details and behavioral repairs](docs/modernization.md)
 explain differences between the executable baseline, the attached paper, and API fixes.
 
-**Validation status:** environment/data tests passed locally. TensorFlow, replay-buffer
-and native MuJoCo execution could not be validated in this session because the required
-packages were unavailable and network downloads failed. The model/training tests are
-included and run by the research CI workflow. See [validation](docs/validation.md).
+**Validation status:** the research suite executes locally with TensorFlow, cpprb and
+MuJoCo. SAC demonstration generation, dense GAIL and EQN-GAIL have working training,
+evaluation, checkpoint and TensorBoard paths. The broader legacy suite still has
+failures. See [executed experiments, test results and limits](docs/validation.md).
 
 ## Installation
 
@@ -24,6 +24,8 @@ Use Python 3.10–3.12 and a virtual environment inside the checkout:
 mkdir -p .tmp .cache/pip
 export TMPDIR="$PWD/.tmp"
 export PIP_CACHE_DIR="$PWD/.cache/pip"
+export MPLCONFIGDIR="$PWD/.cache/matplotlib"
+export KERAS_HOME="$PWD/.cache/keras"
 python -m venv .venv-modern
 source .venv-modern/bin/activate
 python -m pip install --upgrade pip
@@ -43,6 +45,42 @@ is set. [Upstream compatibility notes](https://github.com/tensorflow/probability
 TensorFlow Addons, `tensorflow-gpu`, Python 2 compatibility helpers and `mujoco-py`
 are unnecessary for the modern research path. Spectral normalization is implemented
 locally using the historical power-iteration rule. Native MuJoCo is optional.
+The TensorBoard 2.18 CLI needs `pkg_resources`, so the runtime declares
+`setuptools>=77,<82`; upgrading setuptools beyond this range breaks the dashboard.
+
+## Validated three-stage workflow and TensorBoard
+
+The following command runs 20,000 steps each of SAC, GAIL and EQN-GAIL on
+`Pendulum-v1`, using 200-step episodes. The final 20 SAC evaluation trajectories
+are shared by both imitation runs. Each stage saves four checkpoints and periodic
+TensorBoard metrics. It also checks event values and checkpoint contents:
+
+```bash
+.venv-modern/bin/python scripts/run_validation_pipeline.py
+.venv-modern/bin/tensorboard --logdir results/validated_pipeline --host 127.0.0.1 --port 6006
+```
+
+Open <http://127.0.0.1:6006>. Select runs under `sac/`, `gail/`, and `eqn-gail/`.
+Useful scalar tags include `Common/average_test_return`, `SAC/actor_loss`,
+`SAC/critic_Q1_loss`, `GAIL/DiscriminatorLoss`, `GAIL_EQL/DiscriminatorLoss`,
+`GAIL/learned_reward_mean`, and `DAC/absorbing_batch_fraction`.
+TensorBoard displays TensorFlow 2 scalar events even though its event-reader API
+classifies them as tensor summaries.
+
+Pendulum episodes truncate at a time limit; zero absorbing/terminal fractions are
+expected. Separate integration tests exercise genuine termination, including
+termination coincident with truncation. These runs check one task and one seed per
+algorithm; they do not reproduce the paper's full benchmark results.
+
+To check existing records without retraining:
+
+```bash
+.venv-modern/bin/python scripts/inspect_training_records.py results/validated_pipeline
+```
+
+Run directories retain `command.txt`, `args.txt`, checkpoints, event files, and
+source revision/diff metadata. `validation_summary.json` contains all metric
+counts, last steps, finite-value checks and evaluation curves.
 
 ## Experiments
 

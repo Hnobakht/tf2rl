@@ -27,6 +27,8 @@ class GaussianActor(tf.keras.Model):
             self.base_layers.append(layers.LayerNormalization()) #TODO: For GAIL_EQL
 
         self.out_mean = layers.Dense(action_dim, name="L_mean", kernel_initializer=initializer)
+        for index, layer in enumerate(self.base_layers):
+            setattr(self, f"hidden_{index}", layer)
         if self._state_independent_std:
             self.out_logstd = self.add_weight(
                 name="L_logstd", shape=(action_dim,),

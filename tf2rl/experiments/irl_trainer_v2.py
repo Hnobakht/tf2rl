@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from tf2rl.algos.sac_irl import SAC_IRL
-from tf2rl.experiments.trainer import Trainer
+from tf2rl.experiments.trainer import Trainer, with_summary_writer
 from tf2rl.experiments.expert_sampling import ExpertSampler
 from tf2rl.misc.dac_ops import dac_transitions
 from tf2rl.misc.get_replay_buffer import get_replay_buffer
@@ -61,6 +61,7 @@ class IRLTrainerV2(Trainer):
             kwargs.update(agent_logps=samples["logp"], expert_logps=expert["logp"])
         return kwargs
 
+    @with_summary_writer
     def __call__(self):
         if self._evaluate:
             return self.evaluate_policy_continuously()
@@ -106,6 +107,11 @@ class IRLTrainerV2(Trainer):
                 kwargs = {"apply_atol": True} if apply_atol else {}
                 rewards = self._irl.inference(samples["obs"], samples["act"], samples["next_obs"], **kwargs)
                 with tf.summary.record_if(step % self._save_summary_interval == 0):
+                    tf.summary.scalar("DAC/absorbing_batch_fraction",
+                                      np.mean(samples["done"] < 0))
+                    tf.summary.scalar("DAC/terminal_batch_fraction",
+                                      np.mean(samples["done"] == 0))
+                    tf.summary.scalar("GAIL/learned_reward_mean", tf.reduce_mean(rewards))
                     # Match the existing update order: generator, then discriminator.
                     self._policy.train(samples["obs"], samples["act"], samples["next_obs"],
                                         rewards, samples["done"])

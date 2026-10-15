@@ -29,6 +29,8 @@ class CriticQ(tf.keras.Model):
         initializer = initializer or tf.keras.initializers.GlorotUniform()
         self.base_layers = [tf.keras.layers.Dense(unit, activation='relu', kernel_initializer=initializer)
                             for unit in critic_units]
+        for index, layer in enumerate(self.base_layers):
+            setattr(self, f"hidden_{index}", layer)
         self.out_layer = tf.keras.layers.Dense(1, name="Q", kernel_initializer=initializer)
         self(tf.zeros((1,) + tuple(state_shape)), tf.zeros((1, action_dim)))
 

@@ -6,7 +6,7 @@ import tensorflow as tf
 
 from cpprb import ReplayBuffer
 
-from tf2rl.experiments.trainer import Trainer
+from tf2rl.experiments.trainer import Trainer, with_summary_writer
 from tf2rl.experiments.utils import save_path, frames_to_gif
 from tf2rl.misc.get_replay_buffer import get_replay_buffer, get_default_rb_dict
 from tf2rl.misc.discount_cumsum import discount_cumsum
@@ -17,6 +17,7 @@ class OnPolicyTrainer(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+    @with_summary_writer
     def __call__(self):
         # Prepare buffer
         self.replay_buffer = get_replay_buffer(
