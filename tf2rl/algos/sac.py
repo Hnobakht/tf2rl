@@ -1,7 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, LayerNormalization, Conv2D, MaxPool2D, Flatten, Dropout
-from tensorflow.keras.layers import Resizing, Rescaling
+from tensorflow.keras.layers import Dense, LayerNormalization, Conv2D, MaxPool2D, Flatten
 
 from tf2rl.algos.policy_base import OffPolicyAgent
 from tf2rl.misc.target_update_ops import update_target_variables
@@ -21,10 +20,6 @@ class CriticQ(tf.keras.Model):
         for index, layer in enumerate(self.base_layers):
             setattr(self, f"hidden_{index}", layer)
 
-        # dummy_state = tf.constant(np.zeros(shape=(1,) + state_shape, dtype=np.float32))
-        # dummy_action = tf.constant(np.zeros(shape=[1, action_dim], dtype=np.float32))
-        # with tf.device("/cpu:0"):
-        #     self(dummy_state, dummy_action)
 
     def call(self, states, actions, training=None):
         features = tf.concat((states, actions), axis=1)
@@ -39,30 +34,22 @@ class CriticQ_pixels(tf.keras.Model):
         super().__init__(name=name)
 
         self.cnn_layers = []
-        # self.cnn_layers.append(Rescaling(scale=1./255))
-        # self.cnn_layers.append(Resizing(32,32))
         self.cnn_layers.append(Conv2D(4, kernel_size=(3, 3), strides=(1,1), padding='same', activation='relu'))
-        # self.cnn_layers.append(MaxPool2D(pool_size=(4,4)))
         self.cnn_layers.append(Conv2D(8, kernel_size=(3, 3), strides=(1,1), padding='same',  activation='relu'))
-        # self.cnn_layers.append(Dropout(0.2))
         self.cnn_layers.append(MaxPool2D(pool_size=(2, 2)))
         self.cnn_layers.append(Conv2D(8, kernel_size=(3, 3), padding='same', activation='relu'))
-        # self.cnn_layers.append(Dropout(0.2))
         self.cnn_layers.append(Flatten())
 
         self.base_layers = []
         self.base_layers.append(Dense(128, activation='relu', kernel_initializer=initializer))
-        # self.base_layers.append(Dropout(0.2))
         self.base_layers.append(LayerNormalization())
         self.base_layers.append(Dense(64, activation='relu', kernel_initializer=initializer))
-        # self.base_layers.append(Dropout(0.2))
         self.base_layers.append(LayerNormalization())
 
         self.out_layer = Dense(1, name="Q", activation='linear', kernel_initializer=initializer)
 
     def call(self, states, actions, training=None):
         features_cnn = tf.cast(states/255, dtype=tf.float32)
-        # features_cnn = states
         print("[DEBUG] input: " + str(states.shape) + " [call CriticQ_pixels]")
         for cnn_layer in self.cnn_layers:
             features_cnn = cnn_layer(features_cnn, training=training)
@@ -72,16 +59,6 @@ class CriticQ_pixels(tf.keras.Model):
         for cur_layer in self.base_layers:
             features = cur_layer(features)
             print("[DEBUG] features: " + str(features.shape))
-        # features = self.base_layers[0](features_cnn, training=training)
-        # features = self.base_layers[1](features, training=training)
-        # print("[DEBUG] features: " + str(features.shape))
-        # # features = self.base_layers[1](features)
-        # features = tf.concat((features, actions), axis=1)
-        # print("[DEBUG] features: " + str(features.shape))
-        # features = self.base_layers[2](features, training=training)
-        # features = self.base_layers[3](features, training=training)
-        # print("[DEBUG] features: " + str(features.shape))
-        # # features = self.base_layers[3](features)
         values = self.out_layer(features, training=training)
         return tf.squeeze(values, axis=1)
 
@@ -112,7 +89,6 @@ class SAC(OffPolicyAgent):
         self._is_xla = is_xla
         self._is_pixels = is_pixels
         self._setup_actor(state_shape, action_dim, actor_units, lr, max_action)
-        # self._setup_critic_v(state_shape, critic_units, lr)
         self._setup_critic_q(state_shape, action_dim, critic_units, lr)
 
         # Set hyper-parameters
@@ -175,7 +151,6 @@ class SAC(OffPolicyAgent):
 
         return (action.numpy()[0], logps.numpy()[0]) if is_single_state else (action, logps)
 
-    # @tf.function
     def _get_action_body(self, state, test):
         print("[DEBUG] initializing {_get_action_body SAC}...")
         with tf.device(self.device):
@@ -206,7 +181,6 @@ class SAC(OffPolicyAgent):
 
         return td_errors
 
-    # @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones):#, weights):
         print("[DEBUG] initializing {_train_body SAC}")
         with tf.device(self.device):
@@ -277,7 +251,6 @@ class SAC(OffPolicyAgent):
 
         return td_errors.numpy()
 
-    # @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
         print("[DEBUG] initializing {_compute_td_error_body}...")
         with tf.device(self.device):
@@ -300,15 +273,12 @@ class SAC(OffPolicyAgent):
 
         return logp.numpy()[0] if is_single_state else logp.numpy()
 
-    # @tf.function
     def _get_logp_body(self, state):
         with tf.device(self.device):
             logp = self.actor(state, training=False)[1]
         return logp
 
     def _init_static_graph(self, state_shape, action_dim):
-        # Compiling the static graphs
-        # assert len(state_shape) == 1, "[ERROR] This SAC only supports RAM env {_init_static_graph SAC}"
         if self._is_pixels:
             state_spec = tuple([None]+list(state_shape))
             state_dtype = tf.uint8

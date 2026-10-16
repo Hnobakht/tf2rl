@@ -10,8 +10,6 @@ class ReacherSimpleEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def step(self, a):
         vec = self.get_body_com("fingertip")-self.get_body_com("target")
         reward_dist = - np.linalg.norm(vec)
-        # reward_ctrl = - np.square(a).sum()
-        # reward = reward_dist + reward_ctrl
         reward = reward_dist
         self.do_simulation(a, self.frame_skip)
         ob = self._get_obs()

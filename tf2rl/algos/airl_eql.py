@@ -1,5 +1,5 @@
 """EQN-AIRL: equation reward network and the original dense shaping potential."""
-from tf2rl.algos.airl import AIRL, StateModel
+from tf2rl.algos.airl import AIRL
 from tf2rl.networks.eqn import EquationNetwork
 
 

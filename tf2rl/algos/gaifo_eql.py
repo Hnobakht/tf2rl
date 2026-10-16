@@ -1,19 +1,12 @@
 import numpy as np
 import tensorflow as tf
 
-# import tensorflow_addons as tfa
-# import tensorflow_gan.python.losses.losses_impl as tfgan_losses
-# from tensorflow.keras.layers import Dense
 
-# from tf2rl.networks.layer import EqlLayer, DenseLayer
 from tf2rl.networks.layer import DenseLayer, EqlLayerv2 as EqlLayer
 from tensorflow.keras import initializers #, regularizers, backend as K
 
-# from tensorflow.keras.constraints import Constraint
-# from tensorflow.python.keras.utils.version_utils import training
 
 from tf2rl.algos.policy_base import IRLPolicy
-# from tf2rl.misc.normalizer import Normalizer
 from tf2rl.misc.target_update_ops import update_target_variables
 
 
@@ -28,8 +21,6 @@ class Discriminator_EQL(tf.keras.Model):
         self.num_layers = num_layers
         self.w_initializer = initializers.get(w_initializer)
         self.b_initializer = initializers.get(b_initializer)
-        # self.w_initializer = initializers.Constant(value=0.1)
-        # self.b_initializer = initializers.Constant(value=0.1)
         self.atol= atol
         self.lmbda = lmbda
         self.drop_out = drop_out
@@ -105,9 +96,6 @@ class Discriminator_EQL(tf.keras.Model):
         print("[DEBUG] initializing [compute_reward Discriminator_EQL] shape: {} name: {}".format(inputs.shape, self.name))
         return tf.math.log(self(inputs, training=False, l1_regularizers=l1_regularizers) + 1e-8) - \
                tf.math.log(1 - self(inputs, training=False, l1_regularizers=l1_regularizers) + 1e-8)
-        # return tf.math.log(self(inputs, training=False, l1_regularizers=l1_regularizers) + 1e-8)
-        # return -tf.math.log(1 - self(inputs, training=False, l1_regularizers=l1_regularizers) + 1e-8)
-        # return self(inputs, training=False, l1_regularizers=l1_regularizers)
 
 class GAIfO_EQL(IRLPolicy):
     def __init__(
@@ -174,7 +162,6 @@ class GAIfO_EQL(IRLPolicy):
                                         self.disc.weights, tau=1.)
 
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr, beta_1=0.5)
-        # self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
 
     def train(self, agent_states, agent_next_states, expert_states, expert_next_states, itr, **kwargs):
         assert itr , "The interation must be defined [train GAIfO_EQL]"
@@ -186,12 +173,9 @@ class GAIfO_EQL(IRLPolicy):
             l1_regularizers = 0
 
         if itr % self.update_delay == 0:
-            # if self._is_debug: tf.summary.trace_on(graph=True)
-            # loss, accuracy, js_divergence, grads = self._train_body(agent_states, agent_next_states,
             loss, accuracy, js_divergence, grads = self._train_body_eql(agent_states, agent_next_states,
                                                                     expert_states, expert_next_states,
                                                                     l1_regularizers)
-            # if self._is_debug: tf.summary.trace_export(name="_train_body")
             tf.summary.scalar(name=self.policy_name+"/DiscriminatorLoss", data=loss)
             tf.summary.scalar(name=self.policy_name+"/Accuracy", data=accuracy)
             tf.summary.scalar(name=self.policy_name+"/JSdivergence", data=js_divergence)
@@ -231,10 +215,8 @@ class GAIfO_EQL(IRLPolicy):
                     loss = -(tf.reduce_mean(tf.math.log(real_logits + epsilon)) +
                              tf.reduce_mean(tf.math.log(1. - fake_logits + epsilon)))
 
-                # loss = tfgan_losses.modified_discriminator_loss(real_logits, fake_logits, label_smoothing=0.0)
 
             grads = tape.gradient(loss, self.disc.trainable_variables)
-            # grads = [tf.clip_by_norm(i, 8, axes=-1) for i in grads]
             self.optimizer.apply_gradients( zip(grads, self.disc.trainable_variables))
 
             accuracy = (tf.reduce_mean(tf.cast(real_logits >= 0.5, tf.float32)) / 2. +
@@ -274,10 +256,8 @@ class GAIfO_EQL(IRLPolicy):
                              tf.reduce_mean(tf.math.log(1. - fake_logits + epsilon)) -
                              1 * tf.reduce_sum(self.disc.losses)) # penalty for log singularities
 
-                # loss = tfgan_losses.modified_discriminator_loss(real_logits, fake_logits, label_smoothing=0.0)
 
             grads = tape.gradient(loss, self.disc.trainable_variables)
-            # grads = [tf.clip_by_norm(i, 8, axes=-1) for i in grads]
             self.optimizer.apply_gradients(zip(grads, self.disc.trainable_variables))
 
             accuracy = (tf.reduce_mean(tf.cast(real_logits >= 0.5, tf.float32)) / 2. +
@@ -294,12 +274,10 @@ class GAIfO_EQL(IRLPolicy):
             states = np.expand_dims(states, axis=0)
             next_states = np.expand_dims(next_states, axis=0)
         inputs = np.concatenate((states, next_states), axis=1)
-        # if self._is_debug: tf.summary.trace_on(graph=True)
         if apply_atol:
             ret = self._inference_body_atol(inputs)
         else:
             ret = self._inference_body(inputs)
-        # if self._is_debug: tf.summary.trace_export(name="_inference_body")
         return ret
 
     @tf.function
@@ -313,7 +291,6 @@ class GAIfO_EQL(IRLPolicy):
                                        for i in self.disc.weights])
                                     )
             return  self.disc_target.compute_reward(inputs)
-            # return self.disc.compute_reward(inputs)
 
     @tf.function
     def _inference_body(self, inputs):
@@ -337,6 +314,5 @@ class GAIfO_EQL(IRLPolicy):
                             help='Discriminator architecture. use case: 2,1 or 1. <default: %(default)s>')
         parser.add_argument('--exclude', type=str, default=None,
                             help='Discriminator architecture. use case: None or sig,sig or cos.  <default: %(default)s>')
-        # parser.add_argument('--enable-sn', action='store_true')
 
         return parser

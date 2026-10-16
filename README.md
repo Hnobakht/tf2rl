@@ -11,10 +11,11 @@ and DAC absorbing-state targets. It does **not** substitute a standard-library
 imitation algorithm. [Scientific details and behavioral repairs](docs/modernization.md)
 explain differences between the executable baseline, the attached paper, and API fixes.
 
-**Validation status:** the research suite executes locally with TensorFlow, cpprb and
-MuJoCo. SAC demonstration generation, dense GAIL and EQN-GAIL have working training,
-evaluation, checkpoint and TensorBoard paths. The broader legacy suite still has
-failures. See [executed experiments, test results and limits](docs/validation.md).
+**Validation status:** SAC demonstration generation, dense GAIL and EQN-GAIL have
+working training, evaluation, checkpoint and TensorBoard paths. Unit-test suites
+were removed in the 2026-10-16 cleanup; executable experiment smoke workflows remain.
+See [executed experiments and limits](docs/validation.md) and the
+[cleanup record](docs/cleanup.md). Broader experimental algorithms remain unverified.
 
 ## Installation
 
@@ -29,11 +30,16 @@ export KERAS_HOME="$PWD/.cache/keras"
 python -m venv .venv-modern
 source .venv-modern/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e '.[test,mujoco]'
+python -m pip install -r requirements.txt
 ```
 
-Install `.[render]` additionally for pixel observations, classic-control rendering,
-or GIF export. No separately modified Gym installation is required. `legacy/gym`
+`requirements.txt` installs the editable project with MuJoCo, rendering and
+development extras, pinning direct dependencies and key runtime packages to the
+versions validated in `.venv-modern` on Python 3.10/Linux. It is not a complete
+transitive dependency lock. For a smaller installation using compatible version
+ranges, run `python -m pip install -e '.[mujoco]'`; add `render` for pixel
+observations, classic-control rendering or GIF export.
+No separately modified Gym installation is required. `legacy/gym`
 is a provenance archive and must not be installed for these experiments.
 
 Dependencies are declared in `pyproject.toml`: TensorFlow 2.18, TensorFlow Probability
@@ -68,8 +74,8 @@ TensorBoard displays TensorFlow 2 scalar events even though its event-reader API
 classifies them as tensor summaries.
 
 Pendulum episodes truncate at a time limit; zero absorbing/terminal fractions are
-expected. Separate integration tests exercise genuine termination, including
-termination coincident with truncation. These runs check one task and one seed per
+expected. Before removal, integration checks exercised genuine termination,
+including termination coincident with truncation. These runs check one task and one seed per
 algorithm; they do not reproduce the paper's full benchmark results.
 
 To check existing records without retraining:
@@ -148,6 +154,34 @@ restored discriminator. Its native `step(action)` retains the environment reward
 `info['environment_reward']`. Historical external-reward wrapper classes and their
 sign conventions remain as experimental source; `--reward-dir` is not silently ignored.
 
+## Debugging EQN operators in VS Code
+
+Open the repository folder in VS Code with the Python Debugger extension installed.
+Choose **EQN-GAIL: HalfCheetah (eager debug)** from Run and Debug, then press F5.
+The configuration in `.vscode/launch.json` uses `.venv-modern`, the saved HalfCheetah
+expert trajectories, and a fresh 2,000-step training run with 256 warmup steps.
+Adjust `--expert-path-dir` if your demonstrations are in a different directory.
+TensorBoard records go under `results/debug/eqn-gail-halfcheetah`.
+
+In `tf2rl/networks/eqn.py`, set breakpoints on the `value = tf.math.log(...)` and
+`value = (a + 0.1) / (...)` lines inside `EquationLayer.call`. Right-click each
+breakpoint, choose Edit Breakpoint, and use this expression to skip initialization
+and stop on eager discriminator training calls:
+
+```python
+training is True and tf.executing_eagerly()
+```
+
+Inspect `a.numpy()` (and `b.numpy()` for division) in the Debug Console. Press F10
+to execute the operation, then inspect `value.numpy()`. `self.name` identifies the
+equation layer and `group` identifies the operator repetition. F5 continues to the
+next breakpoint; disable breakpoints when you want training to progress freely.
+
+The CLI's `--debug` enables TensorFlow eager function execution so Python
+breakpoints run on each batch instead of only during graph tracing. This is slower
+and cannot be combined with `--xla`; the equations and loss functions are unchanged.
+`--is-debug` separately enables discriminator weight histograms in TensorBoard.
+
 ## Absorbing states and data
 
 `AbsorbingWrapper` appends a zero indicator to normal vector observations. The
@@ -175,26 +209,28 @@ Where old files lack boundary metadata, a done at the environment horizon is inf
 as truncation with a warning. Already augmented observations are not augmented twice.
 AIRL requires stored `logp` values; the loader does not invent missing probabilities.
 
-## Project structure and tests
+## Project structure and validation
 
 - `tf2rl/algos`: original algorithms, shared research losses, EQN-AIRL/EQN-GAIL and SAC.
 - `tf2rl/networks/eqn.py`: equation operators, scalar output, and reusable networks.
 - `tf2rl/envs`: native wrappers, custom tasks and packaged `assets/`.
 - `tf2rl/experiments`: common CLI, DAC trainer, demonstration I/O and expert sampling.
-- `tests/research`: analytic losses/gradients, model updates, transition semantics,
-  export/import/training/checkpoint workflows and optional MuJoCo tasks.
-- `examples/old`, distinct historical algorithm variants, and `legacy/gym`: preserved
-  research/upstream history; not all experimental paths are certified on the new stack.
+- `scripts`: executable training workflows and TensorBoard/checkpoint inspection.
+- `legacy/python`: distinct historical algorithms and launchers, excluded from the
+  runtime package. The modern trainers live in `irl_trainer.py` and `airl_trainer.py`;
+  their old `_v2` import paths are compatibility aliases.
+- `legacy/gym`: historical Gym source and assets, excluded from the runtime package.
 
 ```bash
-python -m pytest tests/research tests/misc tests/envs/test_utils.py --basetemp=.tmp/pytest -q
-python -m pytest tests --basetemp=.tmp/pytest-all -q
-bash test_run_examples.sh
+python -m compileall -q tf2rl examples scripts
+bash scripts/smoke_examples.sh
+python scripts/run_validation_pipeline.py --steps 300 --warmup 32 --interval 300 --units 32,32 --output results/smoke-pipeline
 python -m build
 ```
 
-The full upstream suite includes optional Atari/DMC and older algorithms; interpret
-failures separately from the core research suite. Original upstream documentation is
-retained in [docs/upstream-readme.md](docs/upstream-readme.md). Results from the paper
+Unit tests and the pytest dependency have been removed. Historical validation
+results and limitations remain in [docs/validation.md](docs/validation.md).
+Original upstream documentation is retained in
+[docs/upstream-readme.md](docs/upstream-readme.md). Results from the paper
 cannot be reproduced or claimed verified without its demonstrations, experiment
 configurations, original physics/framework versions and full-length training runs.

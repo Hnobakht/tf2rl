@@ -12,7 +12,7 @@ def get_space_size(space):
     if isinstance(space, Box):
         return space.shape
     elif isinstance(space, Discrete):
-        return [1, ]  # space.n
+        return [1]
     else:
         raise NotImplementedError("Assuming to use Box or Discrete, not {}".format(type(space)))
 
@@ -49,13 +49,10 @@ def get_replay_buffer(policy, env, irl=None, save_logp=False, use_prioritized_rb
     if size is not None:
         kwargs["size"] = size
 
-    # on-policy policy
     if not issubclass(type(policy), OffPolicyAgent):
         kwargs["size"] = policy.horizon
         kwargs["env_dict"].pop("next_obs") if irl is None else None
         kwargs["env_dict"].pop("rew")
-        # TODO: Remove done. Currently cannot remove because of cpprb implementation
-        # kwargs["env_dict"].pop("done")
         kwargs["env_dict"]["logp"] = {}
         kwargs["env_dict"]["ret"] = {}
         kwargs["env_dict"]["adv"] = {}
@@ -63,7 +60,6 @@ def get_replay_buffer(policy, env, irl=None, save_logp=False, use_prioritized_rb
             kwargs["env_dict"]["act"]["dtype"] = np.int32
         return ReplayBuffer(**kwargs)
 
-    # N-step prioritized
     if use_prioritized_rb and use_nstep_rb:
         kwargs["Nstep"] = {"size": n_step,
                            "gamma": policy.discount,
@@ -75,11 +71,9 @@ def get_replay_buffer(policy, env, irl=None, save_logp=False, use_prioritized_rb
         kwargs["env_dict"]["obs"]["dtype"] = np.ubyte
         kwargs["env_dict"]["next_obs"]["dtype"] = np.ubyte
 
-    # prioritized
     if use_prioritized_rb:
         return PrioritizedReplayBuffer(**kwargs)
 
-    # N-step
     if use_nstep_rb:
         kwargs["Nstep"] = {"size": n_step,
                            "gamma": policy.discount,

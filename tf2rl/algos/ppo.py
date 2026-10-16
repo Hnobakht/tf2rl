@@ -132,18 +132,12 @@ class PPO(VPG):
         with tf.device(self.device):
             # Update actor
             with tf.GradientTape() as tape:
-                # ent = tf.reduce_mean(
-                #     self.actor.compute_entropy(states))
                 if self.clip:
                     logp_news = self.actor.compute_log_probs(states, actions)
                     ratio = tf.math.exp(logp_news - tf.squeeze(logp_olds))
                     min_adv = tf.where(tf.squeeze(advantages) > 0,
                                        (1 + self.clip_ratio) * tf.squeeze(advantages),
                                        (1 - self.clip_ratio) * tf.squeeze(advantages))
-                    # min_adv = tf.clip_by_value(
-                    #     ratio,
-                    #     1.0 - self.clip_ratio,
-                    #     1.0 + self.clip_ratio) * tf.squeeze(advantages)
                     actor_loss = -tf.reduce_mean(tf.minimum(ratio * tf.squeeze(advantages), min_adv))
                     ent = tf.reduce_mean(-logp_news)
                     if self.entropy_coef > 0:

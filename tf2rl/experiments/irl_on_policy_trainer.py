@@ -152,7 +152,6 @@ class IRLOnPolicyTrainer(Trainer):
                             target = slice(idx * self._policy.batch_size,
                                            (idx + 1) * self._policy.batch_size)
                             _, _, kl = self._policy.train(
-                            # _, kl = self._policy.train_actor(
                                             states=samples["obs"][target],
                                             actions=samples["act"][target],
                                             advantages=adv[target],
@@ -161,7 +160,6 @@ class IRLOnPolicyTrainer(Trainer):
                             if (kl > self._policy.target_kl).any():
                                 print("[DEBUG] The KL ({}) has reached the limit at batch: {} and  epoch: {}."
                                       .format(kl.mean(), idx, idx_epoch))
-                                # br = True
                                 break
                     # for idx_critic in range(int(self._policy.horizon / self._policy.batch_size)):
                     #     target = slice(idx_critic * self._policy.batch_size,

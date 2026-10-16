@@ -190,7 +190,6 @@ class MeTrpoTrainer(MPCTrainer):
             next_obs = self.predict_next_state(obs, env_act)
 
             self._env.state = np.array([np.arctan2(next_obs[1], next_obs[0]), next_obs[2]], dtype=np.float32)
-            # print(obs, act, next_obs, self._env.state)
             self._env.render()
             obs = next_obs
 

@@ -1,0 +1,46 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "EQN-GAIL: HalfCheetah (eager debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tf2rl.experiments.cli",
+            "python": "${workspaceFolder}/.venv-modern/bin/python",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "TMPDIR": "${workspaceFolder}/.tmp",
+                "MPLCONFIGDIR": "${workspaceFolder}/.cache/matplotlib",
+                "KERAS_HOME": "${workspaceFolder}/.cache/keras",
+                "TF_CPP_MIN_LOG_LEVEL": "3",
+                "TF_NUM_INTRAOP_THREADS": "2",
+                "TF_NUM_INTEROP_THREADS": "2",
+                "CUDA_VISIBLE_DEVICES": "-1"
+            },
+            "args": [
+                "--algorithm", "eqn-gail",
+                "--env-name", "HalfCheetah-v5",
+                "--expert-path-dir", "${workspaceFolder}/results/expert/halfcheetah/20261015T100036.549837_SAC_",
+                "--n-expert-trajectories", "20",
+                "--seed", "0",
+                "--debug",
+                "--max-steps", "2000",
+                "--n-warmup", "256",
+                "--units", "256,256",
+                "--batch-size", "256",
+                "--batch-size-ail", "32",
+                "--memory-capacity", "100000",
+                "--v", "2,1",
+                "--dropout", ".5,0",
+                "--update-delay", "3",
+                "--test-interval", "2000",
+                "--test-episodes", "1",
+                "--save-model-interval", "2000",
+                "--save-summary-interval", "10",
+                "--logdir", "results/debug/eqn-gail-halfcheetah"
+            ]
+        }
+    ]
+}

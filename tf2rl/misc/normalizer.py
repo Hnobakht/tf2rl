@@ -16,7 +16,6 @@ class Normalizer:
         if not self._mean_only:
             self._var = tf.Variable(0, dtype=tf.float32)
 
-    # @tf.function
     def observe(self, x):
         """Compute next mean and std
 
@@ -32,7 +31,6 @@ class Normalizer:
             self._var = tf.clip_by_value(
                 tf.math.divide_no_nan(self._mean_diff, self._n), 1e-2, 1e+2)
 
-    # @tf.function
     def normalize(self, x):
         std = tf.math.sqrt(self._var)
         return tf.math.divide_no_nan(x - self._mean, std)

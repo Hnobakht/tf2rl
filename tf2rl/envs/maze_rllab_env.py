@@ -56,10 +56,6 @@ class PointMazeEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return np.concatenate([self.get_body_com("particle")[:2],
                                [np.linalg.norm(self.get_body_com("particle")[:2] - self.get_body_com("target")[:2])]
                                ])
-        # return np.concatenate([
-        #     self.get_body_com("particle"),
-        #     self.get_body_com("target"),
-        # ])
 
     def plot_trajs(self, *args, **kwargs):
         pass

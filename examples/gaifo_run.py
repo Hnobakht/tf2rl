@@ -1,14 +1,10 @@
 import gymnasium as gym
-# import d4rl
 import tf2rl
 
 from tf2rl.algos.gaifo import GAIfO
-# from tf2rl.experiments.irl_trainer import IRLTrainer
-from tf2rl.experiments.irl_trainer_v2 import IRLTrainerV2 as IRLTrainer
+from tf2rl.experiments.irl_trainer import IRLTrainer
 from tf2rl.experiments.utils import restore_latest_n_traj
-# from tf2rl.envs.utils import is_discrete, get_act_dim
 from tf2rl.misc.prepare_output_dir import prep_log_tag
-# from tf2rl.algos.sac import SAC
 from tf2rl.algos.sac_irl import SAC_IRL as SAC
 from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
 
@@ -16,7 +12,6 @@ if __name__ == '__main__':
     parser = IRLTrainer.get_argument()
     parser = GAIfO.get_argument(parser)
     parser = SAC.get_argument(parser)
-    # parser.add_argument('--env-name', type=str, default="Pendulum-v0")
     parser.add_argument('--env-name', type=str, required=True)
     args = parser.parse_args()
 
@@ -58,11 +53,6 @@ if __name__ == '__main__':
         lr=args.lr_ail,
         )
 
-    # sample_size = int(20*1000)
-    # expert_dataset = d4rl.qlearning_dataset(gym.make('walker2d-expert-v2'), terminate_on_end=True)
-    # trainer = IRLTrainer(policy, env, args, irl, expert_dataset["observations"][-sample_size:, :],
-    #                      expert_dataset["next_observations"][-sample_size:, :], expert_dataset["actions"][-sample_size:, :],
-    #                      test_env, is_episodic=args.absorbed_state, discriminator_noise=args.discriminator_noise)
 
     expert_trajs = restore_latest_n_traj(args.expert_path_dir,
                                          n_path=args.n_expert_trajectories,

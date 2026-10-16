@@ -18,10 +18,6 @@ class CriticQ(tf.keras.Model):
             self.base_layers.append(LayerNormalization())  # TODO: For GAIL_EQL
         self.out_layer = Dense(1, name="Q", activation='linear', kernel_initializer=initializer)
 
-        # dummy_state = tf.constant(np.zeros(shape=(1,) + state_shape, dtype=np.float32))
-        # dummy_action = tf.constant(np.zeros(shape=[1, action_dim], dtype=np.float32))
-        # with tf.device("/cpu:0"):
-        #     self(dummy_state, dummy_action)
 
     def call(self, states, actions):
         features = tf.concat((states, actions), axis=1)
@@ -53,7 +49,6 @@ class SAC(OffPolicyAgent):
             name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
         self._is_debug = is_debug
         self._setup_actor(state_shape, action_dim, actor_units, lr, max_action)
-        # self._setup_critic_v(state_shape, critic_units, lr)
         self._setup_critic_q(state_shape, action_dim, critic_units, lr)
 
         # Set hyper-parameters
@@ -104,7 +99,6 @@ class SAC(OffPolicyAgent):
 
         return (action.numpy()[0], logps.numpy()[0]) if is_single_state else (action, logps)
 
-    # @tf.function
     def _get_action_body(self, state, test):
         print("[DEBUG] initializing {_get_action_body SAC}...")
         with tf.device(self.device):
@@ -135,7 +129,6 @@ class SAC(OffPolicyAgent):
 
         return td_errors
 
-    # @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones):#, weights):
         print("[DEBUG] initializing {_train_body SAC}")
         with tf.device(self.device):
@@ -206,7 +199,6 @@ class SAC(OffPolicyAgent):
 
         return td_errors.numpy()
 
-    # @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
         print("[DEBUG] initializing {_compute_td_error_body}...")
         with tf.device(self.device):
@@ -235,7 +227,6 @@ class SAC(OffPolicyAgent):
 
         return logp.numpy()[0] if is_single_state else logp.numpy()
 
-    # @tf.function
     def _get_logp_body(self, state):
         with tf.device(self.device):
             logp = self.actor(state)[1]

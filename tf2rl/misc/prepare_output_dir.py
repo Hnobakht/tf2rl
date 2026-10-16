@@ -143,18 +143,14 @@ def prepare_output_dir(args, user_specified_dir=None, argv=None,
     return outdir
 
 def prep_log_tag(args, *kwargs):
-    # print(args)
     if len(kwargs) == 4 or len(kwargs) == 5:
         ret = kwargs[0]
         ret += '-v' if "eql" in kwargs[0] else '-u'
         if isinstance(kwargs[2], list):
             ret += str(kwargs[2]).replace('[','I').replace(']','I').replace(' ','').replace(',','-')
-            # ret += str(kwargs[2]).replace(' ', '').replace(',', '-')
         elif isinstance(kwargs[2], tuple):
             ret += str(kwargs[2][1]).replace('[','I').replace(']','I').replace(' ', '').replace(',', '-')
-            # ret += str(kwargs[2][1]).replace(' ', '').replace(',', '-')
             ret += '-u' + str(kwargs[2][0]).replace('[','I').replace(']','I').replace(' ', '').replace(',', '-')
-            # ret += '-u' +  str(kwargs[2][0]).replace(' ', '').replace(',', '-')
         else:
             raise NotImplementedError
         if hasattr(args, "latent_units"):
@@ -164,7 +160,6 @@ def prep_log_tag(args, *kwargs):
             elif hasattr(args, "v"):
                 ret += '-dI' + str(args.v).replace(',','-') + 'I'
                 ret += '-dout' + str(args.dropout).replace('.', '').replace(',', '-')
-                # ret += '-eXI' + args.exclude.replace(',', '-') + 'I'
             else:
                 raise NotImplementedError("dump in prep_log_tag")
             ret += '-kl' + str(args.kl_target).replace('.','')
@@ -175,7 +170,6 @@ def prep_log_tag(args, *kwargs):
             ret += '-udp' + str(args.update_delay)
             ret += '-dout' + str(args.dropout).replace('.','').replace(',','-')
             if args.exclude:
-                # ret += '-ex' + args.exclude.replace(',','-')
                 ret += '-eXI' + args.exclude.replace(',', '-') + 'I'
         ret += '-nois' + str(args.discriminator_noise).replace('.','')
         ret += '-epis'
@@ -192,7 +186,6 @@ def prep_log_tag(args, *kwargs):
         #Starting the policy
         ret += '_' + kwargs[1]
         ret += '-u' + str(kwargs[3]).replace('[','I').replace(']','I').replace(' ','').replace(',','-')
-        # ret += '-u' + str(kwargs[3]).replace(' ', '').replace(',', '-')
         ret += '-b' + str(args.batch_size)
         ret += '-lr' + np.format_float_scientific(args.lr).replace('.', '').replace('-','')
         if "sac" in kwargs[1]:
@@ -204,7 +197,6 @@ def prep_log_tag(args, *kwargs):
     elif len(kwargs) == 2 or len(kwargs) == 3:
         ret = kwargs[0]
         ret += '-u' + str(kwargs[1]).replace('[', 'I').replace(']', 'I').replace(' ', '').replace(',', '-')
-        # ret += '-u' + str(kwargs[1]).replace(' ', '').replace(',', '-')
         ret += '-b' + str(args.batch_size)
         ret += '-lr' + np.format_float_scientific(args.lr).replace('.', '').replace('-', '')
         if "sac" in kwargs[1]:

@@ -1,212 +1,135 @@
-import time
-import random
-
+"""Unified off-policy DAC collector and discriminator trainer."""
 import numpy as np
 import tensorflow as tf
 
+from tf2rl.algos.sac_irl import SAC_IRL
+from tf2rl.experiments.trainer import Trainer, with_summary_writer
+from tf2rl.experiments.expert_sampling import ExpertSampler
+from tf2rl.misc.dac_ops import dac_transitions
 from tf2rl.misc.get_replay_buffer import get_replay_buffer
-from tf2rl.experiments.trainer import Trainer
 
-# tf.random.set_seed(1234)
-# random.seed(1234)
-# np.random.seed(1234)
 
 class IRLTrainer(Trainer):
-    def __init__(
-            self,
-            policy,
-            env,
-            args,
-            irl,
-            expert_obs,
-            expert_next_obs,
-            expert_act,
-            test_env=None,
-            is_perb_rew = False,
-            is_episodic = False,
-            is_short_memory = False,
-            discriminator_noise=0):
+    def __init__(self, policy, env, args, irl, expert_obs, expert_next_obs, expert_act,
+                 test_env=None, is_perb_rew=False, is_episodic=False, is_short_memory=False,
+                 discriminator_noise=0, random_epoch=0, expert_logp=None):
         self._irl = irl
-        args.dir_suffix = self._irl.policy_name + args.dir_suffix
+        if is_perb_rew or is_short_memory:
+            raise NotImplementedError("Perturbed rewards and short-memory modes were never implemented")
+        if not isinstance(policy, SAC_IRL):
+            raise ValueError("The DAC trainer requires the research SAC_IRL generator")
+        if policy._is_absorbed_state != is_episodic:
+            raise ValueError("Collector absorbing mode must match SAC_IRL target mode")
+        if random_epoch < 0:
+            raise ValueError("random_epoch must be nonnegative")
         super().__init__(policy, env, args, test_env, is_episodic=is_episodic)
-        # TODO: Add assertion to check dimention of expert demos and current policy, env is the same
-        self._expert_obs = expert_obs
-        self._expert_next_obs = expert_next_obs
-        self._expert_act = expert_act
-        # Minus one to get next obs
-        self._random_range = range(expert_obs.shape[0])
-        self._is_perb_rew = is_perb_rew
+        if self._normalize_obs:
+            raise ValueError("DAC observation normalization needs an explicit expert/indicator transform")
+        if self._use_prioritized_rb or self._use_nstep_rb:
+            raise NotImplementedError("DAC uses uniform one-step replay; prioritized/N-step masks need a new objective")
+        self._expert_obs = np.asarray(expert_obs, np.float32)
+        self._expert_next_obs = np.asarray(expert_next_obs, np.float32)
+        self._expert_act = np.asarray(expert_act, np.float32)
+        if self._expert_obs.shape[1:] != env.observation_space.shape or self._expert_next_obs.shape != self._expert_obs.shape:
+            raise ValueError("Expert and environment observation shapes must match")
+        if self._expert_act.shape[1:] != env.action_space.shape:
+            raise ValueError("Expert and environment action shapes must match")
+        data = dict(obs=self._expert_obs, next_obs=self._expert_next_obs, act=self._expert_act)
+        if irl.requires_log_probs:
+            if expert_logp is None:
+                raise ValueError("AIRL requires stored expert log probabilities")
+            self._expert_logp = np.asarray(expert_logp, np.float32).reshape(-1, 1)
+            data["logp"] = self._expert_logp
         self.disc_noise = discriminator_noise
-        self._irl_chechpoint()
-        assert hasattr(self._env, "_max_episode_steps"), "The imitation algorithems need _max_episode_steps"
-
-    def _irl_chechpoint(self):
-        # self._checkpoint_irl = tf.train.Checkpoint(policy=self._irl)
-        self._checkpoint_irl = tf.train.Checkpoint(irl_weights=self._irl.weights)
+        self._random_epoch = random_epoch
+        if random_epoch and policy.n_warmup < 1:
+            raise ValueError("Epoch penalty requires a nonempty warmup replay")
+        self._sampler = ExpertSampler(data, irl.batch_size, discriminator_noise)
+        self._noise_size = self._sampler.noise_size
+        self._checkpoint_irl = tf.train.Checkpoint(irl=irl)
         self.checkpoint_manager_irl = tf.train.CheckpointManager(
-            self._checkpoint_irl, directory=self._output_dir + "/irl", max_to_keep=10)
+            self._checkpoint_irl, self._output_dir + "/irl", max_to_keep=10)
 
+    def _get_train_kwargs(self, samples, noise=None, itr=1):
+        random_replay = (self.random_replay_buffer if self._random_epoch
+                         and itr % (self._random_epoch * self._episode_max_steps) == 0 else None)
+        expert = self._sampler.sample(self.replay_buffer, random_replay)
+        kwargs = dict(agent_states=samples["obs"], agent_acts=samples["act"],
+                      agent_next_states=samples["next_obs"], expert_states=expert["obs"],
+                      expert_acts=expert["act"], expert_next_states=expert["next_obs"], itr=itr)
+        if self._irl.requires_log_probs:
+            kwargs.update(agent_logps=samples["logp"], expert_logps=expert["logp"])
+        return kwargs
+
+    @with_summary_writer
     def __call__(self):
-        total_steps = 0
-        tf.summary.experimental.set_step(total_steps)
-        episode_steps = 0
-        episode_return = 0
-        episode_return_D = 0
-        episode_start_time = time.perf_counter()
-        n_episode = 0
-
-        replay_buffer = get_replay_buffer(
-            self._policy, self._env, self._use_prioritized_rb,
-            self._use_nstep_rb, self._n_step)
-
-        obs = np.float32(self._env.reset())
-
-        while total_steps < self._max_steps:
-            if total_steps < self._policy.n_warmup:
+        if self._evaluate:
+            return self.evaluate_policy_continuously()
+        self.replay_buffer = get_replay_buffer(self._policy, self._env, irl=self._irl)
+        self.random_replay_buffer = get_replay_buffer(self._policy, self._env, irl=self._irl,
+                                                     size=max(1, self._policy.n_warmup))
+        obs, _ = self._env.reset()
+        episode_steps, episode_return = 0, 0.
+        for step in range(1, self._max_steps + 1):
+            warmup = step - 1 < self._policy.n_warmup
+            obs = np.asarray(obs, np.float32)
+            if warmup:
                 action = self._env.action_space.sample()
+                logp = self._policy.get_logp(obs) if self._irl.requires_log_probs else None
             else:
-                if "sac" in self._policy.name:
-                    action, logp = self._policy.get_action(obs)
-                else:
-                    action = self._policy.get_action(obs)
-
-            # assert np.isfinite(action).all(), "The action for steping into environment is not valid. step number is {}".format(total_steps)
-            next_obs, reward, done, _ = self._env.step(action)
-            next_obs, reward = np.float32(next_obs), np.float32(reward)
-            done = False if self._is_episodic else done
-            if self._show_progress and total_steps % self._show_progress_interval:
-                self._env.render()
+                action, policy_logp = self._policy.get_action(obs)
+                logp = policy_logp if self._irl.requires_log_probs else None
+            next_obs, reward, terminated, truncated, _ = self._env.step(action)
             episode_steps += 1
+            truncated = truncated or episode_steps >= self._episode_max_steps
+            rows = dac_transitions(self._env, obs, action, np.asarray(next_obs, np.float32),
+                                    reward, terminated, truncated, absorbing=self._is_episodic, logp=logp)
+            for row in rows:
+                self.replay_buffer.add(**row)
+            # Preserve epoch penalty: physical warmup transitions only, excluding
+            # the last warmup step, as in the original IRLTrainer.
+            if step < self._policy.n_warmup:
+                self.random_replay_buffer.add(**rows[0])
             episode_return += reward
-
-            if total_steps > self._policy.n_warmup + 1: # To not to ove trace the @tf
-                if "EQL" in self._irl.policy_name and self._irl.atol_starting_step:
-                    episode_return_D += self._irl.inference(obs, action, next_obs,
-                                                            total_steps >  self._irl.atol_starting_step)[0][0]
-                else:
-                    episode_return_D += self._irl.inference(obs, action, next_obs)[0][0]
-            total_steps += 1
-            tf.summary.experimental.set_step(total_steps)
-
-            done_flag = done
-            if (hasattr(self._env, "_max_episode_steps") and
-                episode_steps == self._env._max_episode_steps):
-                done_flag = False
-
-            replay_buffer.add(obs=obs, act=action,
-                              next_obs=next_obs, rew=reward, done=done_flag)
             obs = next_obs
-
-            if done or episode_steps == self._episode_max_steps:
-                replay_buffer.on_episode_end()
-                obs = np.float32(self._env.reset())
-
-                n_episode += 1
-                fps = episode_steps / (time.perf_counter() - episode_start_time)
-                self.logger.info("Total Epi: {0: 5} Steps: {1: 7} Episode Steps: {2: 5} Return: {3: 5.4f} FPS: {4:5.2f}".format(
-                                 n_episode, int(total_steps), episode_steps, episode_return, fps))
-                tf.summary.scalar(name="Common/training_return", data=episode_return)
-                tf.summary.scalar(name="Common/training_adverseral_return", data = episode_return_D/episode_steps)
-
-                episode_steps = 0
-                episode_return = 0
-                episode_return_D = 0
-                episode_start_time = time.perf_counter()
-
-            if total_steps < self._policy.n_warmup:
-                continue
-
-            if total_steps % self._policy.update_interval == 0:
-                samples = replay_buffer.sample(self._policy.batch_size)
-                # Train policy
-                if "EQL" in self._irl.policy_name and self._irl.atol_starting_step:
-                    rew = self._irl.inference(samples["obs"], samples["act"], samples["next_obs"],
-                                              total_steps > self._irl.atol_starting_step)
-                else:
-                    rew = self._irl.inference(samples["obs"], samples["act"], samples["next_obs"])
-                # print(np.mean(rew))
-                # rew = tf.add(rew, tf.random.normal(rew.shape, stddev=(rew.numpy()).std())) if self._is_perb_rew else rew
-                with tf.summary.record_if(total_steps % self._save_summary_interval == 0):
-                    # # TODO: debug this one line
-                    # tf.summary.histogram(name=self._policy.policy_name + "/D_reward", data=rew)
-                    self._policy.train(
-                        samples["obs"], samples["act"], samples["next_obs"],
-                        rew, samples["done"],
-                        None if not self._use_prioritized_rb else samples["weights"])
-                    if self._use_prioritized_rb:
-                        td_error = self._policy.compute_td_error(
-                            samples["obs"], samples["act"], samples["next_obs"],
-                            rew, samples["done"])
-                        replay_buffer.update_priorities(
-                            samples["indexes"], np.abs(td_error) + 1e-6)
-
-                    # Train IRL
+            tf.summary.experimental.set_step(step)
+            if self._show_progress and step % self._show_progress_interval == 0:
+                self._env.render()
+            if terminated or truncated:
+                self.replay_buffer.on_episode_end()
+                tf.summary.scalar("Common/training_return", episode_return)
+                obs, _ = self._env.reset()
+                episode_steps, episode_return = 0, 0.
+            if step >= self._policy.n_warmup and step % self._policy.update_interval == 0:
+                samples = self.replay_buffer.sample(self._policy.batch_size)
+                apply_atol = (getattr(self._irl, "atol_starting_step", None) is not None
+                              and step > self._irl.atol_starting_step)
+                kwargs = {"apply_atol": True} if apply_atol else {}
+                rewards = self._irl.inference(samples["obs"], samples["act"], samples["next_obs"], **kwargs)
+                with tf.summary.record_if(step % self._save_summary_interval == 0):
+                    tf.summary.scalar("DAC/absorbing_batch_fraction",
+                                      np.mean(samples["done"] < 0))
+                    tf.summary.scalar("DAC/terminal_batch_fraction",
+                                      np.mean(samples["done"] == 0))
+                    tf.summary.scalar("GAIL/learned_reward_mean", tf.reduce_mean(rewards))
+                    # Match the existing update order: generator, then discriminator.
+                    self._policy.train(samples["obs"], samples["act"], samples["next_obs"],
+                                        rewards, samples["done"])
                     for _ in range(self._irl.n_training):
-                        samples = replay_buffer.sample(self._irl.batch_size)
-                        noise_size = int(self._irl.batch_size * self.disc_noise)
-                        noise = replay_buffer.sample(noise_size);
-                        # Do not allow duplication!!!
-                        # my code: changing np.rsndom.choice to random.sample for speed
-                        # indices = np.random.choice(self._random_range, self._irl.batch_size, replace=False)
-                        # indices = random.sample(self._random_range, self._irl.batch_size)
-                        #TODO: permute the mixed expert data
-                        indices = random.sample(self._random_range, self._irl.batch_size - noise_size)
-                        indices = np.array(indices)
-                        assert indices.shape[0] + noise_size == self._irl.batch_size, \
-                            "The size of expert batch does not match the IRL batch size."
-                        if "EQL" in self._irl.policy_name:
-                            self._irl.train(
-                                agent_states=samples["obs"],
-                                agent_acts=samples["act"],
-                                agent_next_states=samples["next_obs"],
-                                # expert_states=self._expert_obs[indices],
-                                # expert_acts=self._expert_act[indices],
-                                # expert_next_states=self._expert_next_obs[indices],
-                                expert_states=np.concatenate([self._expert_obs[indices], noise["obs"]]),
-                                expert_acts=np.concatenate([self._expert_act[indices], noise["act"]]),
-                                expert_next_states=np.concatenate([self._expert_next_obs[indices], noise["next_obs"]]),
-                                itr = total_steps)
-                        else:
-                            self._irl.train(
-                                agent_states=samples["obs"],
-                                agent_acts=samples["act"],
-                                agent_next_states=samples["next_obs"],
-                                # expert_states=self._expert_obs[indices],
-                                # expert_acts=self._expert_act[indices],
-                                # expert_next_states=self._expert_next_obs[indices]
-                                expert_states=np.concatenate([self._expert_obs[indices], noise["obs"]]),
-                                expert_acts=np.concatenate([self._expert_act[indices], noise["act"]]),
-                                expert_next_states=np.concatenate([self._expert_next_obs[indices], noise["next_obs"]])
-                                )
-
-
-            if total_steps % self._test_interval == 0:
-                avg_test_return, avg_test_steps = self.evaluate_policy(total_steps)
-                self.logger.info("Evaluation Total Steps: {0: 7} Average Reward {1: 5.4f} over {2: 2} episodes".format(
-                    total_steps, avg_test_return, self._test_episodes))
-                tf.summary.scalar(
-                    name="Common/average_test_return", data=avg_test_return)
-                tf.summary.scalar(
-                    name="Common/average_test_episode_length", data=avg_test_steps)
-                tf.summary.scalar(
-                    name="Common/fps", data=fps)
-
-            if total_steps % self._save_model_interval == 0:
-                self.checkpoint_manager.save()
-                # TODO: Sometimes returns error in case of EQL activaton functions
+                        samples = self.replay_buffer.sample(self._irl.batch_size)
+                        self._irl.train(**self._get_train_kwargs(samples, itr=step))
+            self._periodic(step)
+            if step % self._save_model_interval == 0:
                 self.checkpoint_manager_irl.save()
-
-        tf.summary.flush()
+        self.writer.flush()
+        return self.replay_buffer
 
     @staticmethod
     def get_argument(parser=None):
         parser = Trainer.get_argument(parser)
-        parser.add_argument('--expert-path-dir', default=None,
-                            help='Path to directory that contains expert trajectories.\n' +
-                            'In case d4rl data sets: d4rl:<name of the environment>. <default: %(default)s>')
-        parser.add_argument('--discriminator-noise',  type=float, default=0.15,
-                            help='It used to Stabilize Generative Adversarial Training. <default: %(default)s>'),
-        parser.add_argument('--absorbed-state-disable', action='store_false',help=" <default: %(default)s>")
-        parser.add_argument('--n_expert_trajectories', type=int, default=20,help=" <default: %(default)s>")
-
+        parser.add_argument('--expert-path-dir', default=None)
+        parser.add_argument('--discriminator-noise', type=float, default=.15)
+        parser.add_argument('--absorbed-state-disable', action='store_false')
+        parser.add_argument('--n_expert_trajectories', '--n-expert-trajectories', type=int, default=20)
+        parser.add_argument('--random-epoch-n', type=int, default=0)
         return parser

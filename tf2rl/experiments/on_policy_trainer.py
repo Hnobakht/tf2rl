@@ -1,4 +1,3 @@
-import os
 import time
 
 import numpy as np
@@ -7,7 +6,6 @@ import tensorflow as tf
 from cpprb import ReplayBuffer
 
 from tf2rl.experiments.trainer import Trainer, with_summary_writer
-from tf2rl.experiments.utils import save_path, frames_to_gif
 from tf2rl.misc.get_replay_buffer import get_replay_buffer, get_default_rb_dict
 from tf2rl.misc.discount_cumsum import discount_cumsum
 from tf2rl.envs.utils import is_discrete
@@ -123,7 +121,6 @@ class OnPolicyTrainer(Trainer):
                             target = slice(idx * self._policy.batch_size,
                                            (idx + 1) * self._policy.batch_size)
                             _, _, kl = self._policy.train(
-                            # _, kl = self._policy.train_actor(
                                             states=samples["obs"][target],
                                             actions=samples["act"][target],
                                             advantages=adv[target],
@@ -132,7 +129,6 @@ class OnPolicyTrainer(Trainer):
                             if (kl > self._policy.target_kl).any():
                                 print("[DEBUG] The KL ({}) has reached the limit at batch: {} and  epoch: {}."
                                       .format(kl.mean(), idx, idx_epoch))
-                                # br = True
                                 break
                     # for idx_critic in range(int(self._policy.horizon / self._policy.batch_size)):
                     #     target = slice(idx_critic * self._policy.batch_size,

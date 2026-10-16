@@ -3,7 +3,6 @@
 These operators reproduce the repository formulas, including the squared-binomial
 operator and the 0.1 relaxation. See docs/modernization.md for paper differences.
 """
-import numpy as np
 import tensorflow as tf
 
 

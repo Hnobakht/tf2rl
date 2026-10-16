@@ -165,11 +165,6 @@ class AntEnvFullDisabled(mujoco_env.MujocoEnv, utils.EzPickle):
             reward_survive=survive_reward)
 
     def _get_obs(self):
-        # if self.ploting:
-        #     joint_pos = self.data.qpos[self.model.jnt_qposadr][1:]
-        #     joints_dic = {"j1": joint_pos[0], "j2": joint_pos[1], "j3": joint_pos[2], "j4": joint_pos[3],
-        #                   "j5": joint_pos[4], "j6": joint_pos[5], "j7": joint_pos[6], "j8": joint_pos[7]}
-        #     self.joints_list.append(joints_dic)
         return np.concatenate([
             self.data.qpos.flat[2:],
             self.data.qvel.flat,
@@ -227,12 +222,6 @@ class AntEnvPlot(mujoco_env.MujocoEnv, utils.EzPickle):
             reward_survive=survive_reward)
 
     def _get_obs(self):
-        # if self.ploting:
-        #     joint_pos = self.data.qpos[self.model.jnt_qposadr][1:]
-        #     # joint_pos = self.data.qpos[self.model.jnt_dofadr][1:]
-        #     joints_dic = {"j1": joint_pos[0], "j2": joint_pos[1], "j3": joint_pos[2], "j4": joint_pos[3],
-        #                   "j5": joint_pos[4], "j6": joint_pos[5], "j7": joint_pos[6], "j8": joint_pos[7]}
-        #     self.joints_list.append(joints_dic)
         return np.concatenate([
             self.data.qpos.flat[2:],
             self.data.qvel.flat,

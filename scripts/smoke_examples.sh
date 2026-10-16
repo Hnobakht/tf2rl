@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cd "$(dirname "$0")/.."
 python -m tf2rl.experiments.cli --help
 python examples/airl_run.py --help
 python examples/gail_run.py --help

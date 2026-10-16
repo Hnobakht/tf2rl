@@ -1,5 +1,8 @@
 # Modernization plan and baseline audit
 
+Historical baseline audit. For the current organization and removal of test suites,
+see [the 2026-10-16 cleanup record](cleanup.md).
+
 The baseline is the supplied working tree, including uncommitted EQN research additions.
 All 351 Python modules (including the vendored Gym) were parsed and their imports and
 public definitions inventoried before editing. A local, ignored backup of the original

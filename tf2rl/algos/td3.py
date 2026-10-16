@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, Conv2D, MaxPool2D, Flatten
+from tensorflow.keras.layers import Dense, Conv2D, Flatten
 
 from tf2rl.algos.ddpg import DDPG
 from tf2rl.algos.policy_base import OffPolicyAgent
@@ -18,8 +18,6 @@ class Actor(tf.keras.Model):
 
         self.max_action = max_action
 
-        # with tf.device("/cpu:0"):
-        #     self(tf.constant(np.zeros(shape=(1,) + state_shape, dtype=np.float32)))
 
     @tf.function
     def call(self, inputs):
@@ -33,7 +31,6 @@ class Critic(tf.keras.Model):
     def __init__(self, state_shape, action_dim, units=(400, 300), name="Critic"):
         super().__init__(name=name)
 
-        # initializer = tf.keras.initializers.TruncatedNormal(mean=0., stddev=2e-3)
         initializer = tf.keras.initializers.glorot_uniform()
 
         self.l1 = Dense(units[0], name="L1", kernel_initializer=initializer)
@@ -44,12 +41,6 @@ class Critic(tf.keras.Model):
         self.l5 = Dense(units[1], name="L5", kernel_initializer=initializer)
         self.l6 = Dense(1, name="L6", kernel_initializer=initializer)
 
-        # dummy_state = tf.constant(
-        #     np.zeros(shape=(1,)+state_shape, dtype=np.float32))
-        # dummy_action = tf.constant(
-        #     np.zeros(shape=(1, action_dim), dtype=np.float32))
-        # with tf.device("/gpu:0"):
-        #     self(dummy_state, dummy_action)
 
     def call(self, states, actions):
         xu = tf.concat((states, actions), axis=1)
@@ -72,9 +63,7 @@ class Actor_pixels(tf.keras.Model):
 
         self.cnn_layers = []
         self.cnn_layers.append(Conv2D(16, kernel_size=(3, 3), activation='relu'))
-        # self.cnn_layers.append(MaxPool2D(2, 2))
         self.cnn_layers.append(Conv2D(32, kernel_size=(3, 3), activation='relu'))
-        # self.cnn_layers.append(Conv2D(32, kernel_size=(3, 3), activation='relu'))
         self.cnn_layers.append(Flatten())
 
         self.l1 = Dense(200, name="L1", kernel_initializer=initializer)
@@ -83,8 +72,6 @@ class Actor_pixels(tf.keras.Model):
 
         self.max_action = max_action
 
-        # with tf.device("/gpu:0"):
-        #     self(tf.constant(np.zeros(shape=(1,) + state_shape, dtype=np.uint8)))
     @tf.function
     def call(self, inputs):
         print("[DEBUG] Input: " + str(inputs.shape) + " Dtype: " + str(inputs.dtype) + "[call Actor_pixels TD3]")
@@ -103,7 +90,6 @@ class Critic_pixels(tf.keras.Model):
     def __init__(self, state_shape, action_dim, units=(400, 300), name="Critic"):
         super().__init__(name=name)
 
-        # initializer = tf.keras.initializers.TruncatedNormal(mean=0., stddev=2e-3)
         initializer = tf.keras.initializers.glorot_uniform()
 
         units = (200,200)
@@ -111,9 +97,7 @@ class Critic_pixels(tf.keras.Model):
         # First Critic Network
         self.cnn_layers_1 = []
         self.cnn_layers_1.append(Conv2D(16, kernel_size=(3, 3), activation='relu', name="cnn_1_1"))
-        # self.cnn_layers_1.append(MaxPool2D(2,2))
         self.cnn_layers_1.append(Conv2D(32, kernel_size=(3, 3), activation='relu', name="cnn_1_2"))
-        # self.cnn_layers_1.append(Conv2D(32, kernel_size=(3, 3), activation='relu', name="cnn_1_3"))
         self.cnn_layers_1.append(Flatten())
 
         self.l1 = Dense(units[0], name="L1", kernel_initializer=initializer, activation='relu')
@@ -123,21 +107,13 @@ class Critic_pixels(tf.keras.Model):
         # 2nd Critic Network
         self.cnn_layers_2 = []
         self.cnn_layers_2.append(Conv2D(16, kernel_size=(3, 3), activation='relu', name="cnn_2_1"))
-        # self.cnn_layers_2.append(MaxPool2D(2, 2))
         self.cnn_layers_2.append(Conv2D(32, kernel_size=(3, 3), activation='relu', name="cnn_2_2"))
-        # self.cnn_layers_2.append(Conv2D(32, kernel_size=(3, 3), activation='relu', name="cnn_2_3"))
         self.cnn_layers_2.append(Flatten())
 
         self.l4 = Dense(units[0], name="L4", kernel_initializer=initializer, activation='relu')
         self.l5 = Dense(units[1], name="L5", kernel_initializer=initializer, activation='relu')
         self.l6 = Dense(1, name="L6", kernel_initializer=initializer)
 
-        # dummy_state = tf.constant(
-        #     np.zeros(shape=(1,)+state_shape, dtype=np.uint8))
-        # dummy_action = tf.constant(
-        #     np.zeros(shape=(1, action_dim), dtype=np.float32))
-        # with tf.device("/gpu:0"):
-        #     self(dummy_state, dummy_action)
 
     @tf.function
     def call(self, states, actions):
@@ -148,8 +124,6 @@ class Critic_pixels(tf.keras.Model):
         for layer1 in self.cnn_layers_1:
             features_cnn_1 = layer1(features_cnn_1)
 
-        # x1 = tf.concat((features_cnn_1, actions), axis=1)
-        # x1 = self.l1(x1)
         x1 = self.l1(features_cnn_1)
         x1 = tf.concat((x1, actions), axis=1)
         x1 = self.l2(x1)
@@ -159,8 +133,6 @@ class Critic_pixels(tf.keras.Model):
         for layer2 in self.cnn_layers_2:
             features_cnn_2 = layer2(features_cnn_2)
 
-        # x2 = tf.concat((features_cnn_2, actions), axis=1)
-        # x2 = self.l1(x2)
         x2 = self.l4(features_cnn_2)
         x2 = tf.concat((x2, actions), axis=1)
         x2 = self.l5(x2)
@@ -188,7 +160,6 @@ class TD3(DDPG):
             noise_clip=0.5,
             is_pixels = False,
             **kwargs):
-        # super().__init__(name=name, state_shape=state_shape, action_dim=action_dim, **kwargs)
         OffPolicyAgent.__init__(self,name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
 
         # Define and initialize Actor network
@@ -257,33 +228,6 @@ class TD3(DDPG):
             critic_grad = tape.gradient(critic_loss, self.critic.trainable_variables)
             self.critic_optimizer.apply_gradients(zip(critic_grad, self.critic.trainable_variables))
 
-            # assert len(dones.shape) == 2
-            # assert len(rewards.shape) == 2
-            # rewards = tf.squeeze(rewards, axis=1)
-            # dones = tf.squeeze(dones, axis=1)
-            # not_dones = 1. - tf.cast(dones, dtype=tf.float32)
-            # with tf.GradientTape() as tape:
-            #     # Get noisy action
-            #     next_action = self.actor_target(next_states)
-            #     noise = tf.cast(
-            #         tf.clip_by_value(tf.random.normal(shape=tf.shape(next_action), stddev=self._policy_noise),
-            #                          -self._noise_clip, self._noise_clip), tf.float32)
-            #
-            #     next_action = tf.clip_by_value(next_action + noise,
-            #                                    -self.actor_target.max_action,
-            #                                    self.actor_target.max_action)
-            #
-            #     next_q1_target, next_q2_target = self.critic_target(next_states, next_action)
-            #     next_q_target = tf.minimum(next_q1_target, next_q2_target)
-            #     q_target = tf.stop_gradient(rewards + not_dones * self.discount * next_q_target)
-            #
-            #     current_q1, current_q2 = self.critic(states, actions)
-            #
-            #     critic_loss = (tf.reduce_mean(((q_target - current_q1) ** 2) * weights) +
-            #                    tf.reduce_mean(((q_target - current_q2) ** 2) * weights))
-            #
-            # critic_grad = tape.gradient(critic_loss, self.critic.trainable_variables)
-            # self.critic_optimizer.apply_gradients(zip(critic_grad, self.critic.trainable_variables))
 
             self._it.assign_add(1)
             with tf.GradientTape() as tape:
@@ -311,8 +255,6 @@ class TD3(DDPG):
             #     self.actor_target.weights, self.actor.weights, self.tau)
 
             return actor_loss, critic_loss, tf.abs(td_errors1) + tf.abs(td_errors2)
-            # return actor_loss, critic_loss, 0.0
-            # return actor_loss, critic_loss, tf.reduce_mean(current_q1)
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
         td_errors1, td_errors2 = self._compute_td_error_body(

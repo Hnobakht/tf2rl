@@ -338,21 +338,10 @@ def ant_maze_corridor(direction=RIGHT, height=6.0, width=10.0):
     wall_ratio = .55#2.0/3
     if direction == LEFT:
         bx, by, bz = (height*(wall_ratio/2), width/2, 0)
-        #bx, by, bz = (height/4, width/2, 0)
-        # bx, by, bz = length * 5/3, length * 5/6 + w, 0
-        # bx1, by1, bz1 = bx - length/12, by-l/6, bz
     else:
         bx, by, bz = (height*(1-wall_ratio/2), width/2, 0)
-        #bx, by, bz = (height*(3/4), width/2, 0)
-        # bx, by, bz = length / 3, length * 5/6 + w, 0
-        # bx1, by1, bz1 = bx + length/12, by-l/6, bz
 
     worldbody.geom(conaffinity=1, name="barrier", rgba="0.9 0.4 0.6 1", size=[l*(wall_ratio), w, h], pos=[bx, by, bz], type="box")
-    # worldbody.geom(conaffinity=1, name="barrier1", rgba="0.9 0.4 0.6 1", size=[w, l/2 - 2*w, h], pos=[length/2, length/2, bz], type="box")
-    # worldbody.geom(conaffinity=1, name="barrier2", rgba="0.9 0.4 0.6 1", size=[l/6, w, h], pos=[bx1, by1, bz1], type="box")
-    # worldbody.geom(conaffinity=1, name="barrier3", rgba="0.9 0.4 0.6 1", size=[w, l/6, h], pos=[bx, by, bz], type="box")
-    # worldbody.geom(conaffinity=1, condim=3, name="floor", rgba="0.4 0.4 0.4 1", size=[l, l, w], pos=[length/2, length/2, -h],
-    #                type="box")
     worldbody.geom(conaffinity="1", condim="3", material="MatPlane", name="floor", pos=[height/2, height/2, -h + w],
                    rgba="0.8 0.9 0.8 1", size="40 40 40", type="plane")
 
@@ -433,9 +422,7 @@ def pusher(goal_pos=np.array([0.45, -0.05, -0.323])):
     tips_arm.geom(name="tip_arml",type="sphere",pos="0.1 -0.1 0.",size="0.01")
     tips_arm.geom(name="tip_armr",type="sphere",pos="0.1 0.1 0.",size="0.01")
 
-    #object_ = worldbody.body(name="object", pos=[0.45, -0.05, -0.275])
     object_ = worldbody.body(name="object", pos=[0.0, 0.0, -0.275])
-    #object_.geom(rgba="1 1 1 0",type="sphere",size="0.05 0.05 0.05",density="0.00001",conaffinity="0")
     object_.geom(rgba="1 1 1 1",type="cylinder",size="0.05 0.05 0.05",density="0.00001",conaffinity="0", contype=1)
     object_.joint(name="obj_slidey",type="slide",pos="0 0 0",axis="0 1 0",range="-10.3213 10.3",damping="0.5")
     object_.joint(name="obj_slidex",type="slide",pos="0 0 0",axis="1 0 0",range="-10.3213 10.3",damping="0.5")
@@ -502,7 +489,6 @@ def swimmer_rllab():
     custom.numeric(name='frame_skip', data=50)
 
     default = mjcmodel.root.default()
-    #default.joint(armature=0.1)
     default.geom(rgba=[0.8, .6, .1, 1], condim=1, contype=1, conaffinity=1, material='geom')
 
     asset = mjcmodel.root.asset()

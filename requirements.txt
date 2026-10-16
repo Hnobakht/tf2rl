@@ -1,0 +1,33 @@
+# Install from the repository root with Python 3.10-3.12:
+#   python -m pip install -r requirements.txt
+# Pins match the validated .venv-modern environment (Python 3.10, Linux).
+# Direct dependencies and key runtime packages are pinned; this is not a full
+# transitive dependency lock. Compatible ranges remain in pyproject.toml.
+
+# Install the project and its simulation, rendering and development extras.
+-e .[mujoco,render,dev]
+
+# Research training and TensorBoard.
+tensorflow==2.18.1
+tensorflow-probability==0.25.0
+tf-keras==2.18.0
+keras==3.12.4
+tensorboard==2.18.0
+# TensorBoard 2.18 requires pkg_resources, removed in setuptools 82.
+setuptools==81.0.0
+numpy==2.0.0
+cpprb==11.0.0
+scipy==1.15.3
+joblib==1.6.0
+
+# Gymnasium environments, HalfCheetah physics and rendering/export support.
+gymnasium==1.3.0
+mujoco==3.15.0
+pygame-ce==2.5.8
+matplotlib==3.10.9
+pillow==12.3.0
+opencv-python-headless==5.0.0.93
+
+# Development tools.
+build==1.6.1
+ruff==0.17.0

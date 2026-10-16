@@ -1,8 +1,6 @@
-import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-# layers = tf.keras.layers
 
 class GaussianActor(tf.keras.Model):
     LOG_STD_CAP_MAX = 2  # np.e**2 = 7.389
@@ -37,9 +35,6 @@ class GaussianActor(tf.keras.Model):
             self.out_logstd = layers.Dense(action_dim, name="L_logstd", kernel_initializer=initializer)
 
         self._max_action = max_action
-        # with tf.device("/cpu:0"):
-        #     dummy_state = tf.constant(np.zeros(shape=(1,) + state_shape, dtype=np.float32))
-        #     self(dummy_state)
 
     def _compute_dist(self, states):
         """
@@ -70,7 +65,6 @@ class GaussianActor(tf.keras.Model):
 
         return tfp.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.exp(log_std))
 
-    # @tf.function
     def call(self, states, training=None, test=False):
         """
         Compute actions and log probabilities of the selected action
@@ -120,22 +114,15 @@ class GaussianActor_pixels(tf.keras.Model):
         self._squash = squash
 
         self.base_layers = []
-        # self.base_layers.append(layers.experimental.preprocessing.Rescaling(scale=1. / 255))
-        # self.base_layers.append(layers.experimental.preprocessing.Resizing(32, 32))
         self.base_layers.append(layers.Conv2D(4, kernel_size=(3, 3), strides=(1,1), padding='same', activation='relu'))
-        # self.base_layers.append(layers.MaxPool2D(pool_size=(4,4)))
         self.base_layers.append(layers.Conv2D(8, kernel_size=(3, 3), strides=(1,1), padding='same', activation='relu'))
-        # self.base_layers.append(layers.Dropout(0.2))
         self.base_layers.append(layers.MaxPool2D(pool_size=(2, 2)))
         self.base_layers.append(layers.Conv2D(8, kernel_size=(3, 3), padding='same', activation='relu'))
-        # self.base_layers.append(layers.Dropout(0.2))
         self.base_layers.append(layers.Flatten())
 
         self.base_layers.append(layers.Dense(128, activation=hidden_activation, kernel_initializer=initializer))
-        # self.base_layers.append(layers.Dropout(0.2))
         self.base_layers.append(layers.LayerNormalization())
         self.base_layers.append(layers.Dense(64, activation=hidden_activation, kernel_initializer=initializer))
-        # self.base_layers.append(layers.Dropout(0.2))
         self.base_layers.append(layers.LayerNormalization())
 
         self.out_mean = layers.Dense(action_dim, name="L_mean", kernel_initializer=initializer)
@@ -179,7 +166,6 @@ class GaussianActor_pixels(tf.keras.Model):
         print("[DEBUG] mean: " + str(mean.shape) +  " log_std: " + str(log_std.shape))
         return tfp.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.exp(log_std))
 
-    # @tf.function
     def call(self, states, training=None, test=False):
         """
         Compute actions and log probabilities of the selected action
@@ -197,15 +183,3 @@ class GaussianActor_pixels(tf.keras.Model):
 
         actions = actions * self._max_action
         return actions, log_pis
-
-    # @tf.function
-    # def compute_log_probs(self, states, actions):
-    #     raw_actions = actions / self._max_action
-    #     dist = self._compute_dist(states)
-    #     logp_pis = dist.log_prob(raw_actions)
-    #     return logp_pis
-    #
-    # @tf.function
-    # def compute_entropy(self, states):
-    #     dist = self._compute_dist(states)
-    #     return dist.entropy()

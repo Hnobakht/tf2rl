@@ -195,7 +195,6 @@ class AntEnvRLLAB(mujoco_env.MujocoEnv, utils.EzPickle):
     A modified ant env with lower joint gear ratios so it flips less often and learns faster.
     """
     def __init__(self, max_timesteps=1000, disabled=False, gear=30, rotation=True, render_mode=None):
-        #mujoco_env.MujocoEnv.__init__(self, 'ant.xml', 5, render_mode=render_mode)
         utils.EzPickle.__init__(self)
         self.timesteps = 0
         self.max_timesteps=max_timesteps
@@ -208,7 +207,6 @@ class AntEnvRLLAB(mujoco_env.MujocoEnv, utils.EzPickle):
         mujoco_env.MujocoEnv.__init__(self, model, 5, render_mode=render_mode)
 
     def step(self, a):
-        # vel = self.model.data.qvel.flat[0]
         if self.rotation:
             vel = self.data.qvel.flat[5]
         else:
@@ -237,11 +235,9 @@ class AntEnvRLLAB(mujoco_env.MujocoEnv, utils.EzPickle):
 
     def _get_obs(self):
         return np.concatenate([
-            # self.model.data.qpos.flat[2:],
             self.data.qpos.flat[2:],
             # self.model.data.qvel.flat,
             self.data.qvel.flat,
-            # np.clip(self.model.data.cfrc_ext, -1, 1).flat,
             np.clip(self.data.cfrc_ext, -1, 1).flat,
         ])
 
@@ -254,10 +250,3 @@ class AntEnvRLLAB(mujoco_env.MujocoEnv, utils.EzPickle):
 
     def viewer_setup(self):
         self.viewer.cam.distance = self.model.stat.extent * 0.5
-
-# if __name__ == "__main__":
-#     env = CustomAntEnv(disabled=True, gear=30)
-#
-#     for _ in range(1000):
-#         env.render()
-#         env.step(env.action_space.sample())

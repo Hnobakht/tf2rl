@@ -1,9 +1,9 @@
 """Gymnasium off-policy training, evaluation, and expert trajectory export."""
 import argparse
+from contextlib import ExitStack
 import copy
 import logging
 from pathlib import Path
-import time
 from functools import wraps
 
 import numpy as np
@@ -51,9 +51,14 @@ class Trainer:
         self.logger = initialize_logger(logging_level=logging.getLevelName(args.logging_level),
                                          output_dir=self._output_dir)
         self.writer = tf.summary.create_file_writer(self._output_dir)
-        self._set_check_point(args.model_dir)
-        if args.evaluate and args.model_dir is None:
-            raise ValueError("Evaluation requires --model-dir")
+        try:
+            self._set_check_point(args.model_dir)
+            if args.evaluate and args.model_dir is None:
+                raise ValueError("Evaluation requires --model-dir")
+        except BaseException:
+            # Construction failed before a caller could register trainer.close().
+            self.writer.close()
+            raise
 
     def _horizon(self, env):
         configured = self._episode_max_steps
@@ -179,13 +184,14 @@ class Trainer:
         return float(np.mean(returns)), float(np.mean(lengths))
 
     def close(self):
-        self.writer.close()
-        self._env.close()
-        self._test_env.close()
+        # Attempt every cleanup even if a viewer or summary writer fails to close.
+        with ExitStack() as resources:
+            resources.callback(self.writer.close)
+            resources.callback(self._env.close)
+            resources.callback(self._test_env.close)
+
     def _set_from_args(self, args):
-        # experiment settings
         self._max_steps = args.max_steps
-        # TODO: Debug this. Right now self._episode_max_steps is useless.
         self._episode_max_steps = (args.episode_max_steps
                                    if args.episode_max_steps is not None
                                    else args.max_steps)

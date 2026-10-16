@@ -2,12 +2,9 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 
-# from tf2rl.algos.gail import GAIL
 from tf2rl.algos.policy_base import IRLPolicy
 from tf2rl.networks.layer import DenseLayerv2 as  DenseLayer
 from tf2rl.networks.layer import  EqlLayerv2 as EqlLayer
-# from tf2rl.networks.layer import  EqlLayerv3 as EqlLayer
-# from tf2rl.networks.spectral_norm_dense import SNDense
 
 
 class Discriminator(tf.keras.Model):
@@ -72,7 +69,6 @@ class Discriminator(tf.keras.Model):
             index += 1
 
     def _decoder_model(self,output_activation):
-        # initializer = tf.keras.initializers.get('random_normal')
         initializer = 'random_normal'
         for index in range(self._n_eqn_layer):
             self.eql_layers.append(EqlLayer(w_initializer=initializer, b_initializer=initializer,
@@ -89,7 +85,6 @@ class Discriminator(tf.keras.Model):
                                     constraint=None, lmbda=0, dynamic_lmbda=False,
                                     activation=output_activation))
 
-    # @tf.function
     def call(self, inputs, training):
         features = tf.concat((inputs[0][:, :-1], inputs[1]), axis=1)
 
@@ -171,18 +166,14 @@ class VAIL_EQN(IRLPolicy):
             tf.summary.scalar(name=self.policy_name+"/FakeLatentKL", data=fake_kl)
             tf.summary.scalar(name=self.policy_name+"/JSdivergence", data=js_divergence)
 
-    # @tf.function
     def _compute_js_divergence(self, fake_logits, real_logits):
         print("[DEBUG] initializing {_compute_js_divergence VAIL}")
         with tf.device(self.device):
-            # fake_logits = tf.sigmoid(fake_logits)
-            # real_logits = tf.sigmoid(real_logits)
             m = (fake_logits + real_logits) / 2.
             js = tf.reduce_mean((fake_logits * tf.math.log(fake_logits / m + 1e-8) +
                                  real_logits * tf.math.log(real_logits / m + 1e-8)) / 2.)
         return js
 
-    # @tf.function
     def _compute_kl_latent(self, means, log_stds):
         r"""
         Compute KL divergence of latent spaces over standard Normal
@@ -199,24 +190,19 @@ class VAIL_EQN(IRLPolicy):
             kl_dist = tf.reduce_sum(-log_stds + (tf.square(means) + tf.square(tf.exp(log_stds)) - 1.) / 2., axis=-1)
         return kl_dist
 
-    # @tf.function
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts, training):
         print("[DEBUG] initializing {_train_body VAIL}.")
         epsilon = 1e-8
         with tf.device(self.device):
             with tf.GradientTape() as tape:
 
-                # real_logits, real_means, real_logstds = self.disc(tf.concat((expert_states, expert_acts), axis=1), training)
-                # fake_logits, fake_means, fake_logstds = self.disc(tf.concat((agent_states, agent_acts), axis=1), training)
                 real_logits, real_means, real_logstds = self.disc((expert_states, expert_acts), training)
                 fake_logits, fake_means, fake_logstds = self.disc((agent_states, agent_acts), training)
                 if self._enable_gp:
                     inter = (agent_states, agent_acts)
                     with tf.GradientTape(watch_accessed_variables=False) as tape2:
-                        # tape2.watch(inter)
                         tape2.watch(list(inter))
                         output = self.disc(inter, training)
-                    # gp_grad = tape2.gradient(output, [inter])[0]
                     gp_grad = tape2.gradient(output, list(inter))[0]
                     gp_grad_penalty = tf.reduce_mean(tf.pow(tf.norm(gp_grad, axis=-1), 2))
 
@@ -260,9 +246,6 @@ class VAIL_EQN(IRLPolicy):
         accuracy = (tf.reduce_mean(tf.cast(real_logits >= 0.5, tf.float32)) / 2. +
                     tf.reduce_mean(tf.cast(fake_logits < 0.5, tf.float32)) / 2.)
         js_divergence = self._compute_js_divergence_graph(fake_logits, real_logits)
-        #
-        # if eqn_loss > 0:
-        #     tf.print(eqn_loss)
 
         return loss, accuracy, real_kl, fake_kl, js_divergence
 
@@ -270,18 +253,13 @@ class VAIL_EQN(IRLPolicy):
         if states.ndim == actions.ndim == 1:
             states = np.expand_dims(states, axis=0)
             actions = np.expand_dims(actions, axis=0)
-        # inputs = np.concatenate((states, actions), axis=1)
         with tf.device(self.device):
-            # out = self._inference_body_graph(tf.constant(inputs), tf.constant(False))
             out = self._inference_body_graph(tf.constant(states), tf.constant(actions), tf.constant(False))
         return out
 
-    # @tf.function
     def _inference_body(self, states, actions, training):
         print("[DEBUG] initializing {_inference_body VAIL}")
         with tf.device(self.device):
-            # return self.disc.compute_reward(inputs)
-            # sig, _, _ = self.disc(inputs, training=training)
             sig, _, _ = self.disc((states, actions), training=training)
             out = tf.math.log(sig + 1e-8) - tf.math.log(1 - sig + 1e-8)
         return out
@@ -306,36 +284,24 @@ class VAIL_EQN(IRLPolicy):
                                                      tf.TensorSpec(shape=(None, state_shape[-1]), dtype=tf.float32),
                                                      tf.TensorSpec(shape=(None, action_dim), dtype=tf.float32),
                                                      tf.TensorSpec(shape=(None), dtype=tf.bool)],
-                                                 # experimental_compile=True,
-                                                 # autograph=False
                                                  )
-            # self._train_body_graph = self._train_body
 
             self._inference_body_graph = tf.function(self._inference_body,
                                                      input_signature=[
                                                          tf.TensorSpec(shape=(None, state_shape[-1]), dtype=tf.float32),
                                                          tf.TensorSpec(shape=(None, action_dim), dtype=tf.float32),
                                                          tf.TensorSpec(shape=(None), dtype=tf.bool)],
-                                                     # experimental_compile=True
-                                                     # autograph=False
                                                      )
-            # self._inference_body_graph =  self._inference_body
 
             self._compute_kl_latent_graph = tf.function(self._compute_kl_latent,
                                                         input_signature=[tf.TensorSpec(shape=(None, n_latent_unit), dtype=tf.float32),
                                                                          tf.TensorSpec(shape=(None, n_latent_unit), dtype=tf.float32)],
-                                                        # experimental_compile=True
-                                                        # autograph=False
                                                         )
-            # self._compute_kl_latent_graph = self._compute_kl_latent
 
             self._compute_js_divergence_graph = tf.function(self._compute_js_divergence,
                                                             input_signature=[tf.TensorSpec(shape=(None, 1), dtype=tf.float32),
                                                                              tf.TensorSpec(shape=(None, 1), dtype=tf.float32)],
-                                                            # experimental_compile=True
-                                                            # autograph=False
                                                             )
-            # self._compute_js_divergence_graph = self._compute_js_divergence
 
     @staticmethod
     def get_argument(parser=None):

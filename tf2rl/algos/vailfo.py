@@ -1,23 +1,13 @@
 import numpy as np
 import tensorflow as tf
 
-from tf2rl.algos.vail import VAIL, Discriminator
-# from tf2rl.algos.policy_base import IRLPolicy
+from tf2rl.algos.vail import VAIL
 
 class VAILfO(VAIL):
     def __init__(
             self,
             state_shape,
             action_dim,
-            # units=(32, 32),
-            # decoder_units = (1),
-            # n_latent_unit=32,
-            # lr=5e-5,
-            # kl_target=0.5,
-            # reg_param=0.,
-            # enable_sn=False,
-            # grad_penalty_coeff = 0.,
-            # n_training = 1,
             name="VAILfO",
             **kwargs):
         super().__init__(state_shape=state_shape ,action_dim=action_dim,  name = name, **kwargs)
@@ -70,27 +60,19 @@ class VAILfO(VAIL):
                                                      tf.TensorSpec(shape=(None, state_shape[-1]), dtype=tf.float32),
                                                      tf.TensorSpec(shape=(None, state_shape[-1]), dtype=tf.float32),
                                                      tf.TensorSpec(shape=(None), dtype=tf.bool)],
-                                                 # experimental_compile=True,
-                                                 # autograph=False
                                                  )
 
             self._inference_body_graph = tf.function(self._inference_body,
                                                      input_signature=[tf.TensorSpec(shape=(None, state_shape[-1]*2),dtype=tf.float32),
                                                                       tf.TensorSpec(shape=(None), dtype=tf.bool)],
-                                                     # experimental_compile=True
-                                                     # autograph=False
                                                      )
 
             self._compute_kl_latent_graph = tf.function(self._compute_kl_latent,
                                                         input_signature=[tf.TensorSpec(shape=(None, n_latent_unit), dtype=tf.float32),
                                                                          tf.TensorSpec(shape=(None, n_latent_unit), dtype=tf.float32)],
-                                                        # experimental_compile=True
-                                                        # autograph=False
                                                         )
 
             self._compute_js_divergence_graph = tf.function(self._compute_js_divergence,
                                                             input_signature=[tf.TensorSpec(shape=(None, 1), dtype=tf.float32),
                                                                              tf.TensorSpec(shape=(None, 1), dtype=tf.float32)],
-                                                            # experimental_compile=True
-                                                            # autograph=False
                                                             )

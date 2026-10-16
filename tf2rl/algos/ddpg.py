@@ -17,8 +17,6 @@ class Actor(tf.keras.Model):
 
         self.max_action = max_action
 
-        # with tf.device("/cpu:0"):
-        #     self(tf.constant(np.zeros(shape=(1,) + state_shape, dtype=np.float32)))
 
     def call(self, inputs):
         features = tf.nn.relu(self.l1(inputs))
@@ -36,12 +34,6 @@ class Critic(tf.keras.Model):
         self.l2 = Dense(units[1], name="L2")
         self.l3 = Dense(1, name="L3")
 
-        # dummy_state = tf.constant(
-        #     np.zeros(shape=(1,) + state_shape, dtype=np.float32))
-        # dummy_action = tf.constant(
-        #     np.zeros(shape=[1, action_dim], dtype=np.float32))
-        # with tf.device("/gpu:0"):
-        #     self(dummy_state, dummy_action)
 
     def call(self, states, actions):
         features = tf.concat((states, actions), axis=1)

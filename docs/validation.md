@@ -1,5 +1,10 @@
 # Executed validation, 2026-10-15
 
+This is a historical record. Unit-test suites and their pytest dependency were
+removed at the project owner's request on 2026-10-16; the pytest commands below
+describe the earlier validation and are no longer runnable in the current tree.
+Current smoke workflows and cleanup validation are described in [cleanup.md](cleanup.md).
+
 The repository-local `.venv-modern` contains the base dependencies and all declared
 `test`, `render`, `mujoco`, and `dev` extras. `pip check` passes. Runtime versions:
 Python 3.10.12, TensorFlow 2.18.1, TensorFlow Probability 0.25.0, tf-keras 2.18.0,

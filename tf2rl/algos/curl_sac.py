@@ -70,7 +70,6 @@ class CURLSAC(SAC):
         super().__init__(state_shape=(feature_dim,),
                          action_dim=action_dim,
                          name="CURLSAC",
-                         # auto_alpha=True,
                          lr=lr_sac,
                          lr_alpha=lr_alpha,
                          **kwargs)
@@ -99,12 +98,6 @@ class CURLSAC(SAC):
         next_obses_anchor = random_crop(next_states, self._input_img_size)
         obses_negative = random_crop(states, self._input_img_size)
 
-        # import cv2
-        # for idx in range(obses_anchor.shape[0]):
-        #     cv2.imshow("temp1", cv2.cvtColor(obses_anchor[idx, :, :, :3], cv2.COLOR_BGR2RGB))
-        #     cv2.imshow("temp2", cv2.cvtColor(next_obses_anchor[idx, :, :, :3], cv2.COLOR_BGR2RGB))
-        #     cv2.imshow("temp3", cv2.cvtColor(obses_negative[idx, :, :, :3], cv2.COLOR_BGR2RGB))
-        #     cv2.waitKey(1000)
 
         td_errors, actor_loss, vf_loss, qf_loss, logp_min, logp_max, logp_mean, curl_loss, z_anchor, z_negatives, logits = self._train_body(
             obses_anchor, obses_negative, actions, next_obses_anchor, rewards, dones, weights)
@@ -136,7 +129,6 @@ class CURLSAC(SAC):
         actions, log_pis = self.actor(encoded_state, test)
         return actions
 
-    # @tf.function
     def _train_body(self, obses_anchor, obses_negative, actions, next_obses_anchor, rewards, dones, weights):
         with tf.device(self.device):
             assert len(dones.shape) == 2
@@ -186,10 +178,7 @@ class CURLSAC(SAC):
                 z_negatives = self._encoder_target(obses_negative)
                 # Compute similarities with bilinear products
                 logits = tf.matmul(z_anchor, tf.matmul(self._curl_w, tf.transpose(z_negatives, [1, 0])))
-                # tf.print(logits)
                 logits -= tf.reduce_max(logits, axis=-1, keepdims=True)  # (batch_size, batch_size)
-                # tf.print(logits)
-                # tf.print(tf.keras.losses.sparse_categorical_crossentropy(tf.range(self.batch_size), logits, from_logits=True))
                 curl_loss = tf.reduce_mean(
                     tf.keras.losses.sparse_categorical_crossentropy(tf.range(self.batch_size), logits, from_logits=True))  # Eq.4
 

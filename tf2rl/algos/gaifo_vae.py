@@ -1,12 +1,8 @@
 import numpy as np
 import tensorflow as tf
-from tf2rl.networks.spectral_normalization import SpectralNormalization
-from tensorflow.keras.layers import Dense, Dropout
-import tensorflow_probability as tfp
+from tensorflow.keras.layers import Dense
 
 from tf2rl.algos.policy_base import IRLPolicy
-# from tf2rl.algos.gail import GAIL, Discriminator as DiscriminatorGAIL
-# from tf2rl.networks.spectral_norm_dense import SNDense
 
 
 class Discriminator(tf.keras.Model):
@@ -32,12 +28,6 @@ class Discriminator(tf.keras.Model):
         else:
             raise NotImplementedError
 
-        # dummy_state = tf.constant(
-        #     np.zeros(shape=(1,)+state_shape, dtype=np.float32))
-        # dummy_action = tf.constant(
-        #     np.zeros(shape=[1, action_dim], dtype=np.float32))
-        # with tf.device("/cpu:0"):
-        #     self([dummy_state, dummy_action])
     def _encoder_model(self, units, activation):
         index=0
         for unit in units:
@@ -63,15 +53,8 @@ class Discriminator(tf.keras.Model):
                                             activation=output_activation,
                                             kernel_initializer=self.w_ini))
 
-    # @tf.function
     def call(self, inputs, training):
-        # with tf.device("/gpu:0"):
-        # Encoder
-        # features = tf.concat(inputs, axis=1)
-        # if training == None:
-        #     raise ValueError
 
-        # features = tf.concat((inputs[0][:,:-1], inputs[1]), axis=1)
         features = inputs
         for layer in self._encoder_list:
             features = layer(features)
@@ -81,7 +64,6 @@ class Discriminator(tf.keras.Model):
             means = self.l_mean(features)
             logstds = self.l_logstd(features)
             logstds = tf.clip_by_value(logstds, self.LOG_SIG_CAP_MIN, self.LOG_SIG_CAP_MAX)
-            # latents = means + tf.random.normal(shape=means.shape) * tf.math.exp(logstds)
             latents = means + tf.random.normal(shape=(tf.shape(means)[0],tf.shape(means)[1])) * tf.math.exp(logstds)
         else:
             print("[DEBUG] initializing Training False {call Discriminator-VAIL}")
@@ -93,20 +75,14 @@ class Discriminator(tf.keras.Model):
         # (Not) Binary classifier
         for layer in self._decoder_list:
             latents = layer(latents)
-        # out = latents
 
         return latents, means, logstds
 
     @tf.function
     def compute_reward(self, inputs):
         print("[DEBUG] initializing {compute_reward GAIfO}")
-        # if not self._enable_sn:
-        # return tf.math.log(self(inputs) + 1e-8)
         return tf.math.log(self(inputs) + 1e-8) - \
                tf.math.log(1 - self(inputs) + 1e-8)
-        # else:
-        #     raise NotImplementedError
-        #     return tf.math.log(self(inputs, training=False) + 1e-8)
 
 class GAIfO_VAE(IRLPolicy):
     def __init__(
@@ -137,8 +113,6 @@ class GAIfO_VAE(IRLPolicy):
 
     @tf.function
     def _compute_js_divergence(self, fake_logits, real_logits):
-        # fake_logits = tf.sigmoid(fake_logits)
-        # real_logits = tf.sigmoid(real_logits)
         m = (fake_logits + real_logits) / 2.
         return tf.reduce_mean((
             fake_logits * tf.math.log(fake_logits / m + 1e-8) + real_logits * tf.math.log(real_logits / m + 1e-8)) / 2.)
@@ -179,5 +153,4 @@ class GAIfO_VAE(IRLPolicy):
     @staticmethod
     def get_argument(parser=None):
         parser = IRLPolicy.get_argument(parser)
-        # parser.add_argument('--enable-sn', action='store_true')
         return parser

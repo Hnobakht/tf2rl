@@ -165,9 +165,10 @@ setup; reproducibility environment logging records only relevant runtime setting
   builds and research checks; release jobs produce artifacts without automatic
   upstream package publication.
 
-Historical version-1 trainers, Atari/DMC integrations and experimental VAIL/WAIL,
-GAIfO/reversed-AIRL paths remain source artifacts and are not all certified on this
-stack. The modern four AIRL/GAIL paths use the unified version-2 trainer. External
+Historical version-1 trainers and reversed-AIRL are now archived under
+`legacy/python`. Atari/DMC integrations and experimental VAIL/WAIL and GAIfO
+remain source artifacts and are not all certified on this stack. The modern four
+AIRL/GAIL paths use the unified `IRLTrainer`, with old v2 imports retained as aliases. External
 reward wrapper sign conventions were not silently changed; the new native
 `LearnedRewardWrapper` accepts an explicitly restored IRL object.
 
@@ -175,3 +176,7 @@ Current checkpoints contain policy/discriminator objects and optimizer state. Re
 environment and RNG state are not saved, so continuation is not bitwise replayable.
 Older checkpoints may require explicit weight mapping. No original demonstrations,
 complete experiment configs or result artifacts were available for paper replication.
+
+See [cleanup.md](cleanup.md) for the subsequent version consolidation and removal
+of unit-test suites on 2026-10-16. The earlier test descriptions in this document
+record historical validation, not a currently shipped test suite.

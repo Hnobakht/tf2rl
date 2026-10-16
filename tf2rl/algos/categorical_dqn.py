@@ -228,12 +228,6 @@ class CategoricalDQN(OffPolicyAgent):
         batch_size = states.shape[0]
         actions = tf.cast(actions, dtype=tf.int32)
 
-        # tf.print(tf.expand_dims(tf.range(batch_size), axis=1).shape,
-        #          actions.shape,
-        #          tf.concat(
-        #              values=(tf.expand_dims(tf.range(batch_size), axis=1),
-        #                      actions), axis=1).shape
-        #          )
 
         with tf.device(self.device):
             rewards = tf.tile(

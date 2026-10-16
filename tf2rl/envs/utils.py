@@ -1,4 +1,3 @@
-import gymnasium as gym
 from gymnasium.spaces import Discrete, Box
 
 

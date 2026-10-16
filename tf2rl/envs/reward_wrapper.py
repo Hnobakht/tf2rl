@@ -1,7 +1,6 @@
 import numpy as np
 import gymnasium as gym
 import tensorflow as tf
-import cv2
 from tf2rl.algos.gail import Discriminator
 from tf2rl.algos.gail_eql import Discriminator_EQL
 from tf2rl.algos.airl import StateModel, StateActionModel
@@ -9,16 +8,6 @@ from tf2rl.algos.airl_eql import StateModel_EQL, StateActionModel_EQL
 from tf2rl.algos.gaifo import Discriminator as State_only_discriminator
 from tf2rl.algos.gaifo_eql import Discriminator_EQL as State_only_discriminator_EQL
 
-# class MazeRewardVisual(gym.Wrapper):
-#     def __init__(self, env):
-#         super().__init__(env)
-#         self.render()
-#         for _ in range(20):
-#             self.render('rgb_array')
-#             pixels =  self.env.env.env._get_viewer('rgb_array').read_pixels(500,500)
-#             cv2.imshow("image", pixels[0])
-#             cv2.waitKey()
-#         raise  NotImplementedError
 
 
 class WeightAtolApply(gym.Wrapper):
@@ -103,7 +92,6 @@ class GailEQLExternalReward(gym.Wrapper):
         self.disc = Discriminator_EQL(state_shape=env.observation_space.shape,
                                       action_dim=env.action_space.high.size,
                                       v=v,
-                                      # drop_out=self.drop_out,
                                       num_layers=num_layers,
                                       enable_sn=enable_sn,
                                       constraint=None,
@@ -137,8 +125,6 @@ class GailEQLExternalReward(gym.Wrapper):
         print("[DEBUG] Initializing _step_body [GailEQLExternalReward]")
         with tf.device(self.device):
             return -self.disc.compute_reward(inputs)
-            # return -tf.math.log(1 - self.disc(inputs, training=False, l1_regularizers=0) + 1e-8)
-            # return tf.math.log(self.disc(inputs, training=False, l1_regularizers=0) + 1e-8)
 
     @property
     def _max_episode_steps(self):
@@ -152,8 +138,6 @@ class AirlEQLExternalReward(gym.Wrapper):
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
         if state_only:
             self.disc = StateModel_EQL(
-                # state_shape=state_shape, units=units,
-                # name="reward_net", enable_sn=enable_sn, output_activation="linear")
                 state_shape=env.observation_space.shape,
                 v=v,
                 num_layers=num_layers,
@@ -166,8 +150,6 @@ class AirlEQLExternalReward(gym.Wrapper):
                 output_activation=None)
         else:
             self.disc = StateActionModel_EQL(
-                # state_shape=state_shape, action_dim=action_dim, units=units,
-                # name="reward_net", enable_sn=enable_sn, output_activation="linear")
                 state_shape=env.observation_space.shape,
                 action_dim=env.action_space.high.size,
                 v=v,
@@ -323,7 +305,6 @@ class GaifoEQLExternalReward(gym.Wrapper):
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
         self.disc = State_only_discriminator_EQL(state_shape=env.observation_space.shape,
                                                   v=v,
-                                                  # drop_out=self.drop_out,
                                                   num_layers=num_layers,
                                                   enable_sn=enable_sn,
                                                   constraint=None,
