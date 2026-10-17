@@ -10,6 +10,27 @@ from pathlib import Path
 import numpy as np
 
 
+def expression_statistics(graph, output='raw_output'):
+    """Count only expressions that actually contribute to the requested output.
+
+    The default measures the learned logit/reward before GAIL's fixed sigmoid and
+    log-odds transformation, so those operations do not obscure model complexity.
+    """
+    reachable = {graph['outputs'][output]}
+    for index in reversed(range(len(graph['nodes']))):
+        if index in reachable:
+            reachable.update(graph['nodes'][index].get('args', []))
+    nodes = [graph['nodes'][index] for index in sorted(reachable)]
+    nonlinear = {'sin', 'cos', 'sigmoid', 'log', 'square', 'divide', 'maximum'}
+    return {
+        'operations': sum(node['op'] not in ('input', 'constant') for node in nodes),
+        'nonlinear_operations': sum(node['op'] in nonlinear for node in nodes),
+        'inputs': [graph['inputs'][node['index']] for node in nodes if node['op'] == 'input'],
+        'affine_coefficients': sum(sum(w != 0 for w in node['weights']) + (node['bias'] != 0)
+                                   for node in nodes if node['op'] == 'affine'),
+    }
+
+
 def evaluate_equation(graph, inputs):
     """Evaluate a version-1 graph on a batch of observations (and actions)."""
     if graph['version'] != 1:
@@ -53,6 +74,11 @@ def evaluate_equation(graph, inputs):
         values.append(np.asarray(value, dtype=np.float32))
     return {name: np.broadcast_to(values[index], (len(inputs),)).reshape(-1, 1).copy()
             for name, index in graph['outputs'].items()}
+
+
+# Capture while this module and its source agree. Looking up source at checkpoint
+# time can select the wrong function if the file was edited during a long run.
+_EVALUATOR_SOURCE = inspect.getsource(evaluate_equation)
 
 
 class _Graph:
@@ -202,7 +228,7 @@ def save_equation(graph, path):
     path.with_suffix('.json').write_text(json.dumps(graph, indent=2, allow_nan=False) + '\n')
     path.with_suffix('.txt').write_text(format_equation(graph))
     source = ('"""Exported inference equation. Call predict(batch) for named outputs."""\n'
-              'import numpy as np\n\n' + inspect.getsource(evaluate_equation)
+              'import numpy as np\n\n' + _EVALUATOR_SOURCE
               + '\nGRAPH = ' + repr(graph) + '\n\ndef predict(inputs):\n'
               '    return evaluate_equation(GRAPH, inputs)\n')
     path.with_suffix('.py').write_text(source)

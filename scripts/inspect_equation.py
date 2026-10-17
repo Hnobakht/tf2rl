@@ -12,7 +12,7 @@ from tensorboard.backend.event_processing.event_accumulator import EventAccumula
 from tf2rl.algos.airl_eql import AIRL_EQL
 from tf2rl.algos.gail_eql import GAIL_EQL
 from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
-from tf2rl.networks.equation_export import evaluate_equation
+from tf2rl.networks.equation_export import evaluate_equation, expression_statistics
 
 
 def inspect_equation(path):
@@ -81,6 +81,7 @@ def inspect_equation(path):
     return {'run': str(path), 'checkpoint': checkpoint, 'samples': len(inputs),
             'max_reward_export_error': float(np.max(np.abs(expected - results['reward']))),
             'reachable_expression_nodes': len(graph['nodes']), 'recorded_phases': phases,
+            'raw_expression': expression_statistics(graph),
             'sparsity': metrics}
 
 

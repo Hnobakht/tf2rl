@@ -39,8 +39,9 @@ def inspect_run(path):
                         'final_value': values[-1]}
         if tag == 'Common/average_test_return':
             metrics[tag]['curve'] = [[record.step, value] for record, value in zip(records, values)]
-    if metrics['SAC/actor_loss']['final_step'] != args['max_steps']:
-        raise ValueError(f'{path}: final actor summary is missing; use a summary interval dividing max_steps')
+    final_summary_step = args['max_steps'] // args['save_summary_interval'] * args['save_summary_interval']
+    if metrics['SAC/actor_loss']['final_step'] != final_summary_step:
+        raise ValueError(f'{path}: final scheduled actor summary is missing')
     checkpoint = tf.train.latest_checkpoint(str(path))
     if checkpoint is None:
         raise ValueError(f'{path}: no policy checkpoint')

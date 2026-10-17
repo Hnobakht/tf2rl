@@ -133,7 +133,11 @@ class IRLTrainer(Trainer):
     def _export_equation(self, step):
         if not self._export_equation_enabled:
             return
-        from tf2rl.networks.equation_export import extract_equation, save_equation
+        from tf2rl.networks.equation_export import (
+            expression_statistics,
+            extract_equation,
+            save_equation,
+        )
         model = self._irl.equation_model
         state_only = getattr(self._irl, "_state_only", False)
         state_names = [f"obs_{i}" for i in range(self._env.observation_space.shape[0] - 1)]
@@ -147,6 +151,10 @@ class IRLTrainer(Trainer):
                                  metadata={"environment": self._env.spec.id, "environment_step": step,
                                            "state_only": state_only})
         save_equation(graph, self._output_dir + f"/equations/step_{step:08d}")
+        complexity = expression_statistics(graph)
+        for key in ('operations', 'nonlinear_operations', 'affine_coefficients'):
+            tf.summary.scalar('EQN/expression_' + key, complexity[key])
+        tf.summary.scalar('EQN/expression_inputs', len(complexity['inputs']))
 
     @staticmethod
     def get_argument(parser=None):

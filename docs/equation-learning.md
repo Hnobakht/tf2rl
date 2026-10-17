@@ -43,6 +43,10 @@ To train only the staged variant:
 The same new options work with `--algorithm eqn-airl`, with or without
 `--state-only`. Its dense shaping potential remains unchanged.
 
+For substantially smaller formulas, see the [compact Pendulum experiments](compact-equations.md),
+which use a restricted one-layer operator vocabulary and compare saved policies
+on shared evaluation starts.
+
 ## Training semantics
 
 With the new mode enabled, the discriminator objective is

@@ -107,6 +107,8 @@ for schedule units, checkpoint restoration, exported formulas, numerical diagnos
 and measured outcomes. No additional dependency is needed.
 Convert exported JSON equations to LaTeX with
 `python scripts/equation_json_to_latex.py PATH_TO_EQUATIONS --document`.
+[Compact Pendulum configurations](docs/compact-equations.md) prioritize smaller
+expressions and include a saved-policy comparison tool.
 
 ## Experiments
 

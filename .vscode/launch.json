@@ -41,6 +41,41 @@
                 "--save-summary-interval", "10",
                 "--logdir", "results/debug/eqn-gail-halfcheetah"
             ]
+        },
+        {
+            "name": "SAC: HalfCheetah (eager debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tf2rl.experiments.cli",
+            "python": "${workspaceFolder}/.venv-modern/bin/python",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "TMPDIR": "${workspaceFolder}/.tmp",
+                "MPLCONFIGDIR": "${workspaceFolder}/.cache/matplotlib",
+                "KERAS_HOME": "${workspaceFolder}/.cache/keras",
+                "TF_CPP_MIN_LOG_LEVEL": "3",
+                "TF_NUM_INTRAOP_THREADS": "2",
+                "TF_NUM_INTEROP_THREADS": "2",
+                "CUDA_VISIBLE_DEVICES": "-1"
+            },
+            "args": [
+                "--algorithm", "sac",
+                "--env-name", "HalfCheetah-v5",
+                "--seed", "0",
+                "--debug",
+                "--max-steps", "1000000",
+                "--n-warmup", "10000",
+                "--units", "256,256" ,
+                "--batch-size", "256" ,
+                "--test-interval", "50000",
+                "--test-episodes", "20",
+                "--save-test-path",
+                "--save-model-interval", "50000",
+                "--save-summary-interval", "1000",
+                "--logdir", "results/expert/halfcheetah"
+            ]
         }
     ]
 }
