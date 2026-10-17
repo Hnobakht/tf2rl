@@ -3,8 +3,8 @@ import numpy as np
 import tensorflow as tf
 
 from tf2rl.algos.sac_irl import SAC_IRL
-from tf2rl.experiments.trainer import Trainer, with_summary_writer
 from tf2rl.experiments.expert_sampling import ExpertSampler
+from tf2rl.experiments.trainer import Trainer, with_summary_writer
 from tf2rl.misc.dac_ops import dac_transitions
 from tf2rl.misc.get_replay_buffer import get_replay_buffer
 
@@ -14,10 +14,11 @@ class IRLTrainer(Trainer):
                  test_env=None, is_perb_rew=False, is_episodic=False, is_short_memory=False,
                  discriminator_noise=0, random_epoch=0, expert_logp=None):
         self._irl = irl
+        self._export_equation_enabled = getattr(args, "export_equation", False)
         if is_perb_rew or is_short_memory:
             raise NotImplementedError("Perturbed rewards and short-memory modes were never implemented")
         if not isinstance(policy, SAC_IRL):
-            raise ValueError("The DAC trainer requires the research SAC_IRL generator")
+            raise TypeError("The DAC trainer requires the research SAC_IRL generator")
         if policy._is_absorbed_state != is_episodic:
             raise ValueError("Collector absorbing mode must match SAC_IRL target mode")
         if random_epoch < 0:
@@ -34,7 +35,7 @@ class IRLTrainer(Trainer):
             raise ValueError("Expert and environment observation shapes must match")
         if self._expert_act.shape[1:] != env.action_space.shape:
             raise ValueError("Expert and environment action shapes must match")
-        data = dict(obs=self._expert_obs, next_obs=self._expert_next_obs, act=self._expert_act)
+        data = {"obs": self._expert_obs, "next_obs": self._expert_next_obs, "act": self._expert_act}
         if irl.requires_log_probs:
             if expert_logp is None:
                 raise ValueError("AIRL requires stored expert log probabilities")
@@ -54,9 +55,9 @@ class IRLTrainer(Trainer):
         random_replay = (self.random_replay_buffer if self._random_epoch
                          and itr % (self._random_epoch * self._episode_max_steps) == 0 else None)
         expert = self._sampler.sample(self.replay_buffer, random_replay)
-        kwargs = dict(agent_states=samples["obs"], agent_acts=samples["act"],
-                      agent_next_states=samples["next_obs"], expert_states=expert["obs"],
-                      expert_acts=expert["act"], expert_next_states=expert["next_obs"], itr=itr)
+        kwargs = {"agent_states": samples["obs"], "agent_acts": samples["act"],
+                      "agent_next_states": samples["next_obs"], "expert_states": expert["obs"],
+                      "expert_acts": expert["act"], "expert_next_states": expert["next_obs"], "itr": itr}
         if self._irl.requires_log_probs:
             kwargs.update(agent_logps=samples["logp"], expert_logps=expert["logp"])
         return kwargs
@@ -121,8 +122,31 @@ class IRLTrainer(Trainer):
             self._periodic(step)
             if step % self._save_model_interval == 0:
                 self.checkpoint_manager_irl.save()
+                self._export_equation(step)
+        if self._max_steps % self._save_model_interval:
+            self.checkpoint_manager.save()
+            self.checkpoint_manager_irl.save()
+        self._export_equation(self._max_steps)
         self.writer.flush()
         return self.replay_buffer
+
+    def _export_equation(self, step):
+        if not self._export_equation_enabled:
+            return
+        from tf2rl.networks.equation_export import extract_equation, save_equation
+        model = self._irl.equation_model
+        state_only = getattr(self._irl, "_state_only", False)
+        state_names = [f"obs_{i}" for i in range(self._env.observation_space.shape[0] - 1)]
+        if self._env.spec.id == "Pendulum-v1":
+            state_names = ["cos_theta", "sin_theta", "theta_dot"]
+        names = state_names + ["absorbing_indicator"]
+        if not state_only:
+            names += [f"action_{i}" for i in range(self._env.action_space.shape[0])]
+        graph = extract_equation(model, reward_kind="airl" if self._irl.requires_log_probs else "gail",
+                                 input_names=names,
+                                 metadata={"environment": self._env.spec.id, "environment_step": step,
+                                           "state_only": state_only})
+        save_equation(graph, self._output_dir + f"/equations/step_{step:08d}")
 
     @staticmethod
     def get_argument(parser=None):

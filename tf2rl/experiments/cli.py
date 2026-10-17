@@ -10,13 +10,13 @@ from tf2rl.algos.airl import AIRL
 from tf2rl.algos.airl_eql import AIRL_EQL
 from tf2rl.algos.gail import GAIL
 from tf2rl.algos.gail_eql import GAIL_EQL, equation_arguments
-from tf2rl.algos.sac_irl import SAC_IRL
 from tf2rl.algos.sac import SAC
+from tf2rl.algos.sac_irl import SAC_IRL
 from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
 from tf2rl.experiments.airl_trainer import AIRLTrainer
+from tf2rl.experiments.demonstrations import restore_latest_n_traj
 from tf2rl.experiments.irl_trainer import IRLTrainer
 from tf2rl.experiments.trainer import Trainer
-from tf2rl.experiments.demonstrations import restore_latest_n_traj
 
 
 def _csv(value, cast):
@@ -43,6 +43,8 @@ def main(argv=None, algorithm=None):
         parser.error('--reward-dir requires an explicitly constructed external-reward wrapper; see docs/modernization.md')
     if args.debug and args.xla:
         parser.error('--debug requires eager execution and cannot be combined with --xla')
+    if (args.eqn_l1 or args.eqn_stages or args.export_equation) and not args.algorithm.startswith('eqn-'):
+        parser.error('Equation sparsity/export options require eqn-gail or eqn-airl')
     if args.debug:
         tf.config.run_functions_eagerly(True)
     random.seed(args.seed)
@@ -72,7 +74,7 @@ def main(argv=None, algorithm=None):
         test_env.reset(seed=args.seed + 1)
         units = _csv(args.units, int)
         policy_class = SAC_IRL if imitation else SAC
-        absorbing_kwargs = dict(is_absorbed_state=absorbing) if imitation else {}
+        absorbing_kwargs = {'is_absorbed_state': absorbing} if imitation else {}
         policy = policy_class(state_shape=env.observation_space.shape, action_dim=env.action_space.shape[0],
                           max_action=float(env.action_space.high[0]), actor_units=units, critic_units=units,
                           gpu=args.gpu, n_warmup=args.n_warmup, batch_size=args.batch_size,
@@ -84,13 +86,15 @@ def main(argv=None, algorithm=None):
         else:
             if args.expert_path_dir is None:
                 parser.error('Imitation training requires --expert-path-dir; use --algorithm sac --save-test-path to export demonstrations')
-            common = dict(state_shape=env.observation_space.shape, action_dim=env.action_space.shape[0],
-                          gpu=args.gpu, batch_size=args.batch_size_ail, lr=args.lr_ail,
-                          n_training=args.n_training, is_debug=args.is_debug)
-            eql = dict(v=_csv(args.v, int), num_layers=len(args.v.split(',')),
-                       drop_out=_csv(args.dropout, float), update_delay=args.update_delay,
-                       exclude=[item.split('-') if item else [] for item in args.exclude.split(',')]
-                       if args.exclude else None)
+            common = {'state_shape': env.observation_space.shape, 'action_dim': env.action_space.shape[0],
+                          'gpu': args.gpu, 'batch_size': args.batch_size_ail, 'lr': args.lr_ail,
+                          'n_training': args.n_training, 'is_debug': args.is_debug}
+            eql = {'v': _csv(args.v, int), 'num_layers': len(args.v.split(',')),
+                       'drop_out': _csv(args.dropout, float), 'update_delay': args.update_delay,
+                       'exclude': [item.split('-') if item else [] for item in args.exclude.split(',')]
+                       if args.exclude else None, 'lmbda': args.eqn_l1,
+                       'training_stages': _csv(args.eqn_stages, int) if args.eqn_stages else None,
+                       'prune_threshold': args.eqn_prune_threshold}
             if args.algorithm == 'eqn-airl':
                 irl = AIRL_EQL(**common, **eql, is_state_only=args.state_only, units=_csv(args.units_ail, int))
             elif args.algorithm == 'airl':
@@ -101,8 +105,8 @@ def main(argv=None, algorithm=None):
                 irl = GAIL(**common, units=_csv(args.units_ail, int), grad_penalty_coeff=args.gp_coef)
             data = restore_latest_n_traj(args.expert_path_dir, n_path=args.n_expert_trajectories,
                                          is_logps=irl.requires_log_probs, env=env, absorbing=absorbing)
-            kwargs = dict(test_env=test_env, is_episodic=absorbing,
-                          discriminator_noise=args.discriminator_noise, random_epoch=args.random_epoch_n)
+            kwargs = {'test_env': test_env, 'is_episodic': absorbing,
+                          'discriminator_noise': args.discriminator_noise, 'random_epoch': args.random_epoch_n}
             if irl.requires_log_probs:
                 trainer = AIRLTrainer(policy, env, args, irl, data['obses'], data['next_obses'],
                                         data['acts'], data['logps'], **kwargs)
@@ -116,7 +120,13 @@ def main(argv=None, algorithm=None):
             checkpoint = tf.train.latest_checkpoint(args.irl_model_dir)
             if checkpoint is None:
                 parser.error('No discriminator checkpoint in --irl-model-dir')
-            trainer._checkpoint_irl.restore(checkpoint)
+            equation_model = getattr(irl, 'equation_model', None)
+            saved_sparse = any('/sparsity_updates/' in name
+                               for name, _ in tf.train.list_variables(checkpoint))
+            if equation_model is not None and equation_model.sparse != saved_sparse:
+                parser.error('Checkpoint sparsity mode differs; restore with matching --eqn-l1/--eqn-stages options')
+            status = trainer._checkpoint_irl.restore(checkpoint)
+            status.assert_existing_objects_matched()
         trainer()
 
 

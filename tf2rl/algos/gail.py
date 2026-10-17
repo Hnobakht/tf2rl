@@ -2,9 +2,13 @@
 import numpy as np
 import tensorflow as tf
 
+from tf2rl.algos.irl_losses import (
+    agent_gradient_penalty,
+    gail_loss,
+    js_divergence,
+    singular_penalty,
+)
 from tf2rl.algos.policy_base import IRLPolicy
-from tf2rl.algos.irl_losses import (gail_loss, singular_penalty, agent_gradient_penalty,
-                                   js_divergence)
 
 
 class Discriminator(tf.keras.Model):
@@ -53,6 +57,7 @@ class GAIL(IRLPolicy):
     def train(self, agent_states, agent_acts, expert_states, expert_acts, itr=1, **kwargs):
         if itr % self.update_delay:
             return None
+        self._before_update()
         result = self._train_body(agent_states, agent_acts, expert_states, expert_acts)
         for label, value in zip(("DiscriminatorLoss", "Accuracy", "JSdivergence"), result):
             tf.summary.scalar(self.policy_name + "/" + label, value)
@@ -60,6 +65,9 @@ class GAIL(IRLPolicy):
             for variable in self.disc.weights:
                 tf.summary.histogram(self.policy_name + "/" + variable.name, variable)
         return result
+
+    def _before_update(self):
+        pass
 
     def _after_update(self):
         pass

@@ -88,6 +88,26 @@ Run directories retain `command.txt`, `args.txt`, checkpoints, event files, and
 source revision/diff metadata. `validation_summary.json` contains all metric
 counts, last steps, finite-value checks and evaluation curves.
 
+## Sparse equation learning
+
+EQN-GAIL and EQN-AIRL support optional L1 regularization, staged sparsity,
+permanent pruning masks, and equation export. Existing training defaults remain
+unchanged. Run the Pendulum comparison and view its records:
+
+```bash
+.venv-modern/bin/python scripts/run_equation_learning.py
+.venv-modern/bin/tensorboard --logdir results/equation-learning --host 127.0.0.1 --port 6006
+```
+
+The workflow trains SAC demonstrations, then original and sparse EQN-GAIL using
+the same data and imitation seed. The sparse run uses `--eqn-l1 .001
+--eqn-stages 1000,4000 --eqn-prune-threshold .01 --export-equation`.
+See [equation-learning instructions and scientific limits](docs/equation-learning.md)
+for schedule units, checkpoint restoration, exported formulas, numerical diagnostics
+and measured outcomes. No additional dependency is needed.
+Convert exported JSON equations to LaTeX with
+`python scripts/equation_json_to_latex.py PATH_TO_EQUATIONS --document`.
+
 ## Experiments
 
 The common entry point is `eqn-train`, or `python -m tf2rl.experiments.cli`.

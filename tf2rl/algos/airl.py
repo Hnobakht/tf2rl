@@ -2,9 +2,9 @@
 import numpy as np
 import tensorflow as tf
 
-from tf2rl.algos.policy_base import IRLPolicy
 from tf2rl.algos.gail import Discriminator
 from tf2rl.algos.irl_losses import airl_loss, singular_penalty
+from tf2rl.algos.policy_base import IRLPolicy
 from tf2rl.networks.spectral_normalization import SpectralNormalization
 
 
@@ -59,6 +59,7 @@ class AIRL(IRLPolicy):
               expert_states, expert_acts, expert_next_states, expert_logps, itr=1):
         if itr % self.update_delay:
             return None
+        self._before_update()
         result = self._train_body(agent_states, agent_acts, agent_next_states, agent_logps,
                                   expert_states, expert_acts, expert_next_states, expert_logps)
         for label, value in zip(("Loss", "rewardF", "valueF"), result):
@@ -67,6 +68,12 @@ class AIRL(IRLPolicy):
             for variable in self.rew_net.weights + self.val_net.weights:
                 tf.summary.histogram(self.policy_name + "/" + variable.name, variable)
         return result
+
+    def _before_update(self):
+        pass
+
+    def _after_update(self):
+        pass
 
     @tf.function
     def _train_body(self, agent_states, agent_acts, agent_next_states, agent_logps,
@@ -88,6 +95,7 @@ class AIRL(IRLPolicy):
                     loss += singular_penalty(self.rew_net)
             variables = self.rew_net.trainable_variables + self.val_net.trainable_variables
             self.rew_optimizer.apply_gradients(zip(tape.gradient(loss, variables), variables))
+            self._after_update()
         return loss, tf.reduce_mean(fake_rewards), tf.reduce_mean(fake_values)
 
     def inference(self, states, actions, next_states=None, logps=None, **kwargs):
