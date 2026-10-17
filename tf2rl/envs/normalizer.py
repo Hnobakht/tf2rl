@@ -39,6 +39,7 @@ class EmpiricalNormalizer:
 
     def __init__(self, shape, batch_axis=0, eps=1e-2, dtype=np.float32,
                  until=None, clip_threshold=None):
+        """Initialize observation statistics, update limits, and optional clipping."""
         dtype = np.dtype(dtype)
         self.batch_axis = batch_axis
         self.eps = dtype.type(eps)
@@ -53,14 +54,17 @@ class EmpiricalNormalizer:
 
     @property
     def mean(self):
+        """Return a copy of the running observation mean without the batch axis."""
         return np.squeeze(self._mean, self.batch_axis).copy()
 
     @property
     def std(self):
+        """Return the running observation standard deviation without the batch axis."""
         return np.sqrt(np.squeeze(self._var, self.batch_axis))
 
     @property
     def _std_inverse(self):
+        """Return the cached inverse standard deviation with numerical stabilization."""
         if self._cached_std_inverse is None:
             self._cached_std_inverse = (self._var + self.eps) ** -0.5
 
@@ -115,6 +119,7 @@ class EmpiricalNormalizer:
         return normalized
 
     def inverse(self, y):
+        """Undo observation normalization using the current mean and variance."""
         mean = np.broadcast_to(self._mean, y.shape)
         std = np.broadcast_to(np.sqrt(self._var + self.eps), y.shape)
         return y * std + mean

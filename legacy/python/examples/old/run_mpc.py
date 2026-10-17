@@ -4,10 +4,12 @@ from tf2rl.experiments.mpc_trainer import MPCTrainer, RandomPolicy
 
 
 def angle_normalize(x):
+    """Wrap angles to the interval from minus pi to pi."""
     return ((x + np.pi) % (2 * np.pi)) - np.pi
 
 
 def reward_fn_pendulum(obses, acts):
+    """Compute the Pendulum state and action cost as a reward for MPC rollouts."""
     is_single_input = obses.ndim == acts.ndim and acts.ndim == 1
     if is_single_input:
         thetas = np.arctan2(obses[1], obses[0])

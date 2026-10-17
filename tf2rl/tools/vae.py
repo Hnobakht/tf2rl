@@ -3,7 +3,9 @@ import tensorflow as tf
 
 
 class VAE(tf.keras.Model):
+    """Variational autoencoder using supplied inference and generative networks."""
     def __init__(self, latent_dim, inference_net, generative_net):
+        """Attach the inference and generative networks and set the latent dimension."""
         super(VAE, self).__init__()
         self.latent_dim = latent_dim
         self.optimizer = tf.keras.optimizers.Adam(1e-4)
@@ -12,19 +14,26 @@ class VAE(tf.keras.Model):
 
     @tf.function
     def sample(self, eps=None):
+        """
+        Decode supplied latent vectors or 100 standard-normal samples into generated observations.
+        """
         if eps is None:
             eps = tf.random.normal(shape=(100, self.latent_dim))
         return self.decode(eps, apply_sigmoid=True)
 
     def encode(self, x):
+        """Return the latent Gaussian mean and log variance for the input batch."""
         mean, logvar = tf.split(self.inference_net(x), num_or_size_splits=2, axis=1)
         return mean, logvar
 
     def reparameterize(self, mean, logvar):
+        """Sample latent vectors from Gaussian parameters using differentiable reparameterization.
+        """
         eps = tf.random.normal(shape=mean.shape)
         return eps * tf.exp(logvar * .5) + mean
 
     def decode(self, z, apply_sigmoid=False):
+        """Map latent vectors to decoder logits, optionally applying a sigmoid."""
         logits = self.generative_net(z)
         if apply_sigmoid:
             probs = tf.sigmoid(logits)
@@ -34,6 +43,7 @@ class VAE(tf.keras.Model):
 
     @tf.function
     def compute_loss(self, x):
+        """Return the Monte Carlo negative evidence lower bound for the input batch."""
         mean, logvar = self.encode(x)
         z = self.reparameterize(mean, logvar)
         x_logit = self.decode(z)
@@ -46,6 +56,7 @@ class VAE(tf.keras.Model):
 
     @tf.function
     def compute_apply_gradients(self, x):
+        """Compute the variational loss and apply one optimizer update."""
         with tf.GradientTape() as tape:
             loss = self.compute_loss(x)
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -53,6 +64,7 @@ class VAE(tf.keras.Model):
 
 
 def log_normal_pdf(sample, mean, logvar, raxis=1):
+    """Return diagonal Gaussian log densities summed along the requested axis."""
     log2pi = tf.math.log(2. * np.pi)
     return tf.reduce_sum(
         -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),
@@ -130,6 +142,7 @@ if __name__ == "__main__":
 
 
     def generate_and_save_images(model, epoch, test_input):
+        """Decode test latent vectors and save the image grid for this epoch."""
         predictions = model.sample(test_input)
         plt.close()
         plt.figure(figsize=(4, 4))
@@ -164,6 +177,7 @@ if __name__ == "__main__":
 
 
     def display_image(epoch_no):
+        """Open the generated image saved for the requested epoch."""
         return PIL.Image.open('image_at_epoch_{:04d}.png'.format(epoch_no))
 
 

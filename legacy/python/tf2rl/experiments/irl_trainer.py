@@ -12,6 +12,7 @@ from tf2rl.experiments.trainer import Trainer
 # np.random.seed(1234)
 
 class IRLTrainer(Trainer):
+    """Alternate generator training with expert-versus-agent discriminator updates."""
     def __init__(
             self,
             policy,
@@ -26,6 +27,7 @@ class IRLTrainer(Trainer):
             is_episodic = False,
             is_short_memory = False,
             discriminator_noise=0):
+        """Configure training, replay storage, evaluation, and checkpoint handling."""
         self._irl = irl
         args.dir_suffix = self._irl.policy_name + args.dir_suffix
         super().__init__(policy, env, args, test_env, is_episodic=is_episodic)
@@ -42,11 +44,13 @@ class IRLTrainer(Trainer):
 
     def _irl_chechpoint(self):
         # self._checkpoint_irl = tf.train.Checkpoint(policy=self._irl)
+        """Create the checkpoint and manager for the imitation-learning model."""
         self._checkpoint_irl = tf.train.Checkpoint(irl_weights=self._irl.weights)
         self.checkpoint_manager_irl = tf.train.CheckpointManager(
             self._checkpoint_irl, directory=self._output_dir + "/irl", max_to_keep=10)
 
     def __call__(self):
+        """Run the training loop, including data collection, policy updates, and evaluation."""
         total_steps = 0
         tf.summary.experimental.set_step(total_steps)
         episode_steps = 0
@@ -200,6 +204,7 @@ class IRLTrainer(Trainer):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = Trainer.get_argument(parser)
         parser.add_argument('--expert-path-dir', default=None,
                             help='Path to directory that contains expert trajectories.\n' +

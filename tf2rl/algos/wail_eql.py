@@ -5,14 +5,18 @@ from tf2rl.misc.target_update_ops import update_target_variables
 from tf2rl.algos.gail_eql import Discriminator_EQL, GAIL_EQL
 
 class Discriminator_EQL_WAIL(Discriminator_EQL):
+    """Equation discriminator with a Wasserstein-style raw reward output."""
     def __init__(self, **kwargs):
+        """Configure the equation discriminator for a raw Wasserstein-style output."""
         super().__init__(**kwargs)
 
     def compute_reward(self, inputs, l1_regularizers = 0):
+        """Return the raw equation discriminator output in inference mode."""
         print("[DEBUG] initializing [compute_reward WAIL_EQL] shape: {} name: {}".format(inputs.shape, self.name))
         return self(inputs, training=False, l1_regularizers=l1_regularizers)
 
 class WAIL_EQL(GAIL_EQL):
+    """Experimental Wasserstein adversarial imitation with an equation discriminator."""
     def __init__(
             self,
             state_shape,
@@ -20,10 +24,12 @@ class WAIL_EQL(GAIL_EQL):
             name="WAIL_EQL",
             grad_penalty_coeff=10,
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         super().__init__(state_shape=state_shape, action_dim=action_dim, name=name, **kwargs)
         self.grad_penalty_coeff = grad_penalty_coeff #if grad_penalty_coeff > 0 else None
 
     def _init(self):
+        """Create the discriminator copies and initialize their parameters."""
         self.disc = Discriminator_EQL_WAIL(state_shape=self.state_shape, action_dim=self.action_dim, v=self.v, drop_out=self.drop_out,
                                           num_layers=self.num_layers, enable_sn=self.enable_sn, constraint=None,
                                           name="Discriminator", lmbda=self.lmbda, exclude = self.exclude,
@@ -42,6 +48,7 @@ class WAIL_EQL(GAIL_EQL):
 
     @tf.function
     def _compute_js_divergence(self, fake_logits, real_logits):
+        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs."""
         print("[DEBUG] initializing [_compute_js_divergence WAIL_EQL] shape: {TODO}")
         m = (fake_logits + real_logits) / 2.
         return tf.reduce_mean((
@@ -50,6 +57,9 @@ class WAIL_EQL(GAIL_EQL):
 
     @tf.function
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts, l1_regularizers):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         print("[DEBUG] initializing [_train_body WAIL_EQL] shape: {TODO}")
         epsilon = 1e-8
         with tf.device(self.device):

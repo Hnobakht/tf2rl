@@ -10,4 +10,5 @@ html_theme = "sphinx_rtd_theme"
 
 
 def setup(app):
+    """Register the Markdown auto-structuring transform with Sphinx."""
     app.add_transform(AutoStructify)

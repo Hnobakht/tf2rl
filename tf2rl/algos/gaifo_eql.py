@@ -11,11 +11,13 @@ from tf2rl.misc.target_update_ops import update_target_variables
 
 
 class Discriminator_EQL(tf.keras.Model):
+    """Equation-network discriminator for expert and agent transitions."""
     def __init__(self, state_shape, num_layers=2, drop_out = None,
                  enable_sn=False, output_activation=None, lmbda=0,
                  name="GAIfO_Discriminator", v=None, exclude=None, atol=0, constraint=None,
                  w_initializer='random_normal', b_initializer='random_normal',
                  is_lmbda_dynamic = False):
+        """Build the equation discriminator with operator groups, dropout, and regularization."""
         super().__init__(name=name)
         print("[DEBUG] Building [__init__ Discriminator_EQL]")
         self.num_layers = num_layers
@@ -76,6 +78,7 @@ class Discriminator_EQL(tf.keras.Model):
                   .format(input_tf.shape, self(input_tf, training=False).shape, self.name))
 
     def call(self, inputs, training=None, l1_regularizers = 0):
+        """Return discriminator outputs for the supplied batch of inputs."""
         print("[DEBUG] initializing [call Discriminator_EQL shapes: {} name: {}".format(inputs.shape, self.name))
 
         if training is None:
@@ -93,11 +96,13 @@ class Discriminator_EQL(tf.keras.Model):
         return self.layer_out(features, training=training, l1_regularizers=l1_regularizers)
 
     def compute_reward(self, inputs, l1_regularizers = 0):
+        """Return stabilized discriminator log odds for each input sample."""
         print("[DEBUG] initializing [compute_reward Discriminator_EQL] shape: {} name: {}".format(inputs.shape, self.name))
         return tf.math.log(self(inputs, training=False, l1_regularizers=l1_regularizers) + 1e-8) - \
                tf.math.log(1 - self(inputs, training=False, l1_regularizers=l1_regularizers) + 1e-8)
 
 class GAIfO_EQL(IRLPolicy):
+    """Observation-only adversarial imitation with an equation discriminator."""
     def __init__(
             self,
             state_shape,
@@ -121,6 +126,7 @@ class GAIfO_EQL(IRLPolicy):
             exclude = None,
             grad_penalty_coeff = 0,
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         super().__init__(name=name, n_training=1, **kwargs)
         self._is_debug = is_debug
         self.update_delay = update_delay
@@ -146,6 +152,7 @@ class GAIfO_EQL(IRLPolicy):
         self._init()
 
     def _init(self):
+        """Create the discriminator copies and initialize their parameters."""
         self.disc = Discriminator_EQL(state_shape=self.state_shape, v=self.v, drop_out=self.drop_out,
                                       num_layers=self.num_layers, enable_sn=self.enable_sn, constraint=None,
                                       name="Discriminator", lmbda=self.lmbda, exclude = self.exclude,
@@ -164,6 +171,9 @@ class GAIfO_EQL(IRLPolicy):
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr, beta_1=0.5)
 
     def train(self, agent_states, agent_next_states, expert_states, expert_next_states, itr, **kwargs):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         assert itr , "The interation must be defined [train GAIfO_EQL]"
 
         if self._is_reg_dyna and self.regularizer_starting_step < itr:
@@ -185,6 +195,7 @@ class GAIfO_EQL(IRLPolicy):
 
     @tf.function
     def _compute_js_divergence(self, fake_logits, real_logits):
+        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs."""
         print("[DEBUG] initializing [_compute_js_divergence GAIfO_EQL] shape: {TODO}")
         m = (fake_logits + real_logits) / 2.
         return tf.reduce_mean((
@@ -192,6 +203,9 @@ class GAIfO_EQL(IRLPolicy):
 
     @tf.function
     def _train_body(self, agent_states, agent_next_states, expert_states, expert_next_states, l1_regularizers):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         print("[DEBUG] initializing [_train_body GAIfO_EQL] shape: {TODO}")
         epsilon = 1e-8
         with tf.device(self.device):
@@ -230,6 +244,7 @@ class GAIfO_EQL(IRLPolicy):
 
     @tf.function
     def _train_body_eql(self, agent_states, agent_next_states, expert_states, expert_next_states, l1_regularizers):
+        """Update the equation discriminator with its regularization and singularity penalties."""
         print("[DEBUG] initializing [_train_body_eql GAIfO_EQL] shape: {TODO}")
         epsilon = 1e-8
         with tf.device(self.device):
@@ -270,6 +285,9 @@ class GAIfO_EQL(IRLPolicy):
         return loss, accuracy, js_divergence, grads
 
     def inference(self, states, actions, next_states, apply_atol=False):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         if states.ndim == 1:
             states = np.expand_dims(states, axis=0)
             next_states = np.expand_dims(next_states, axis=0)
@@ -282,6 +300,7 @@ class GAIfO_EQL(IRLPolicy):
 
     @tf.function
     def _inference_body_atol(self, inputs):
+        """Evaluate rewards using a copy with small weights suppressed by the tolerance."""
         print("[DEBUG] initializing [_inference_body_atol GAIfO_EQL] shape: {} name: {}-{}".format(inputs.shape,
                                                                                              self.disc.name,
                                                                                            self.disc_target.name))
@@ -294,6 +313,9 @@ class GAIfO_EQL(IRLPolicy):
 
     @tf.function
     def _inference_body(self, inputs):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         print("[DEBUG] initializing [_inference_body GAIfO_EQL] shape: {}".format(inputs.shape))
         with tf.device(self.device):
             if self.tau > 0:
@@ -303,6 +325,7 @@ class GAIfO_EQL(IRLPolicy):
                 return self.disc.compute_reward(inputs)
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = IRLPolicy.get_argument(parser)
         parser.add_argument('--update-delay', type=int, default=3,
                             help='Discriminator training delay.  <default: %(default)s>')

@@ -7,7 +7,9 @@ from tf2rl.policies.tfp_categorical_actor import CategoricalActorCritic, Categor
 
 
 class AtariBaseModel(tf.keras.Model):
+    """Convolutional Atari feature extractor with optional noisy dense layers."""
     def __init__(self, name, enable_noisy_dqn=False):
+        """Build the Atari convolutional layers and choose standard or noisy dense features."""
         super().__init__(name=name)
 
         DenseLayer = NoisyDense if enable_noisy_dqn else Dense
@@ -25,6 +27,7 @@ class AtariBaseModel(tf.keras.Model):
 
     def call(self, inputs):
         # TODO: This type conversion seems to be bottle neck
+        """Scale byte images to floats and extract convolutional features."""
         features = tf.divide(tf.cast(inputs, tf.float32),
                              tf.constant(255.))
 
@@ -35,10 +38,14 @@ class AtariBaseModel(tf.keras.Model):
 
 
 class AtariQFunc(AtariBaseModel):
+    """Atari action-value network with optional dueling, noisy, and categorical heads."""
     def __init__(self, state_shape, action_dim, units=None,
                  name="QFunc", enable_dueling_dqn=False,
                  enable_noisy_dqn=False, enable_categorical_dqn=False,
                  n_atoms=51):
+        """
+        Configure the Atari action-value head and optional dueling, noisy, or categorical variants.
+        """
         self._enable_dueling_dqn = enable_dueling_dqn
         self._enable_noisy_dqn = enable_noisy_dqn
         self._enable_categorical_dqn = enable_categorical_dqn
@@ -63,6 +70,7 @@ class AtariQFunc(AtariBaseModel):
 
     def call(self, inputs):
         # Extract features on base layers
+        """Return action values or categorical value distributions from Atari images."""
         features = super().call(inputs)
 
         if self._enable_categorical_dqn:
@@ -95,8 +103,10 @@ class AtariQFunc(AtariBaseModel):
 
 
 class AtariCategoricalActor(CategoricalActor, AtariBaseModel):
+    """Categorical action policy built on Atari image features."""
     def __init__(self, state_shape, action_dim, units=None,
                  name="AtariCategoricalActor"):
+        """Build the Atari feature extractor and categorical action head."""
         self.action_dim = action_dim
 
         # Build base layers
@@ -110,12 +120,15 @@ class AtariCategoricalActor(CategoricalActor, AtariBaseModel):
 
     def _compute_features(self, states):
         # Extract features on base layers
+        """Transform a batch of observations into policy features."""
         return AtariBaseModel.call(self, states)
 
 
 class AtariCategoricalActorCritic(CategoricalActorCritic, AtariBaseModel):
+    """Atari policy with shared image features and a state-value head."""
     def __init__(self, state_shape, action_dim, units=None,
                  name="AtariCategoricalActorCritic"):
+        """Build Atari image features with categorical action and state-value heads."""
         AtariBaseModel.__init__(self, name=name)
         self.action_dim = action_dim
 
@@ -126,4 +139,5 @@ class AtariCategoricalActorCritic(CategoricalActorCritic, AtariBaseModel):
             np.zeros(shape=(1,) + state_shape, dtype=np.float32)))
 
     def _compute_feature(self, states):
+        """Extract convolutional features from a batch of Atari observations."""
         return AtariBaseModel.call(self, states)

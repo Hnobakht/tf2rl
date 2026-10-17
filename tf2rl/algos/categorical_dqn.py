@@ -10,9 +10,11 @@ from tf2rl.misc.huber_loss import huber_loss
 
 
 class QFunc(tf.keras.Model):
+    """Predict a categorical return distribution for each discrete action."""
     def __init__(self, state_shape, action_dim, units=(32, 32),
                  name="CategoricalQFunc", enable_dueling_dqn=False,
                  enable_noisy_dqn=False, n_atoms=51):
+        """Build the discrete-action value network with the requested optional DQN enhancements."""
         super().__init__(name=name)
         self._enable_dueling_dqn = enable_dueling_dqn
         self._enable_noisy_dqn = enable_noisy_dqn
@@ -31,6 +33,7 @@ class QFunc(tf.keras.Model):
             self(tf.constant(np.zeros(shape=(1,) + state_shape, dtype=np.float32)))
 
     def call(self, inputs):
+        """Return a categorical return distribution for each action in the batch."""
         features = self.l1(inputs)
         features = self.l2(features)
         features = self.l3(features)
@@ -52,10 +55,12 @@ class QFunc(tf.keras.Model):
 
     @property
     def n_atoms(self):
+        """Return the number of support atoms in each action-value distribution."""
         return self._n_atoms
 
 
 class CategoricalDQN(OffPolicyAgent):
+    """Distributional DQN agent representing action values on a categorical support."""
     def __init__(
             self,
             state_shape,
@@ -75,6 +80,7 @@ class CategoricalDQN(OffPolicyAgent):
             enable_dueling_dqn=False,
             enable_noisy_dqn=False,
             **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
 
         q_func = q_func if q_func is not None else QFunc
@@ -126,6 +132,7 @@ class CategoricalDQN(OffPolicyAgent):
         self._enable_noisy_dqn = enable_noisy_dqn
 
     def get_action(self, state, test=False, tensor=False):
+        """Select an action for one observation or a batch; test mode disables exploration."""
         if isinstance(state, LazyFrames):
             state = np.array(state)
         if not tensor:
@@ -156,12 +163,14 @@ class CategoricalDQN(OffPolicyAgent):
 
     @tf.function
     def _get_action_body(self, state):
+        """Return greedy actions from the batched Q-network predictions."""
         action_probs = self.q_func(state)
         return tf.argmax(
             tf.reduce_sum(action_probs * self._z_list_broadcasted, axis=2),
             axis=1)
 
     def train(self, states, actions, next_states, rewards, done, weights=None):
+        """Update the Q network from a replay minibatch and return temporal-difference errors."""
         if weights is None:
             weights = np.ones_like(rewards)
         td_errors, q_func_loss = self._train_body(
@@ -185,6 +194,7 @@ class CategoricalDQN(OffPolicyAgent):
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, done, weights):
+        """Apply a Q-network gradient update and update target weights when due."""
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 td_errors = self._compute_td_error_body(
@@ -202,6 +212,7 @@ class CategoricalDQN(OffPolicyAgent):
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
         # TODO: fix this ugly conversion
+        """Return temporal-difference errors for the supplied transition batch."""
         if isinstance(actions, tf.Tensor):
             actions = tf.expand_dims(actions, axis=1)
             rewards = tf.expand_dims(rewards, axis=1)
@@ -296,6 +307,7 @@ class CategoricalDQN(OffPolicyAgent):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = OffPolicyAgent.get_argument(parser)
         parser.add_argument('--enable-double-dqn', action='store_true')
         parser.add_argument('--enable-dueling-dqn', action='store_true')

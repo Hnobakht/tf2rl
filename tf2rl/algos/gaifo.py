@@ -7,9 +7,11 @@ from tf2rl.algos.policy_base import IRLPolicy
 
 
 class Discriminator(tf.keras.Model):
+    """Distinguish expert and agent state transitions, optionally through a latent bottleneck."""
     def __init__(self, state_shape, units=(32, 32), dropout_rate=0.,
                  enable_sn=False, output_activation="sigmoid",
                  name="Discriminator"):
+        """Build the expert-versus-agent discriminator with the requested architecture."""
         tf.keras.Model.__init__(self, name=name)
         self._enable_sn = enable_sn
         self._dropout_rate = dropout_rate
@@ -35,6 +37,7 @@ class Discriminator(tf.keras.Model):
     @tf.function
     def call(self, inputs, training=None):
 
+        """Return discriminator outputs for the supplied batch of inputs."""
         if training == None:
             training = True
 
@@ -48,11 +51,13 @@ class Discriminator(tf.keras.Model):
             return self.l3(features, training=training)
     @tf.function
     def compute_reward(self, inputs):
+        """Return stabilized discriminator log odds for each input sample."""
         print("[DEBUG] initializing {compute_reward GAIfO}")
         return tf.math.log(self(inputs) + 1e-8) - \
                tf.math.log(1 - self(inputs) + 1e-8)
 
 class GAIfO(IRLPolicy):
+    """Adversarial imitation from observations using state-transition discrimination."""
     def __init__(
             self,
             state_shape,
@@ -62,6 +67,7 @@ class GAIfO(IRLPolicy):
             dropout_rate=0.,
             name="GAIfO",
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         super().__init__(name=name, n_training=1, **kwargs)
 
         self.disc = Discriminator(state_shape=state_shape, units=units, enable_sn=enable_sn, dropout_rate=dropout_rate)
@@ -70,6 +76,9 @@ class GAIfO(IRLPolicy):
 
     def train(self, agent_states, agent_next_states,
               expert_states, expert_next_states, **kwargs):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         loss, accuracy, js_divergence = self._train_body(agent_states,
                                                          agent_next_states,
                                                          expert_states,
@@ -82,12 +91,16 @@ class GAIfO(IRLPolicy):
 
     @tf.function
     def _compute_js_divergence(self, fake_logits, real_logits):
+        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs."""
         m = (fake_logits + real_logits) / 2.
         return tf.reduce_mean((
             fake_logits * tf.math.log(fake_logits / m + 1e-8) + real_logits * tf.math.log(real_logits / m + 1e-8)) / 2.)
 
     @tf.function
     def _train_body(self, agent_states, agent_next_states, expert_states, expert_next_states):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         epsilon = 1e-8
         with tf.device(self.device):
             with tf.GradientTape() as tape:
@@ -106,6 +119,9 @@ class GAIfO(IRLPolicy):
         return loss, accuracy, js_divergence
 
     def inference(self, states, actions, next_states):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         assert states.shape == next_states.shape
         if states.ndim == 1:
             states = np.expand_dims(states, axis=0)
@@ -115,11 +131,15 @@ class GAIfO(IRLPolicy):
 
     @tf.function
     def _inference_body(self, inputs):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         print("[DEBUG] initializing {_inference_body GAIfO}...")
         with tf.device(self.device):
             return self.disc.compute_reward(inputs)
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = IRLPolicy.get_argument(parser)
         return parser

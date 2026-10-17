@@ -6,7 +6,9 @@ from tf2rl.algos.policy_base import OffPolicyAgent
 from tf2rl.misc.target_update_ops import update_target_variables
 
 class Actor(tf.keras.Model):
+    """Deterministic policy mapping state vectors to bounded continuous actions."""
     def __init__(self, state_shape, action_dim, max_action, units=(400, 300), name="Actor"):
+        """Build the deterministic policy and set its continuous action bounds."""
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.TruncatedNormal(mean=0., stddev=2e-3)
@@ -19,6 +21,7 @@ class Actor(tf.keras.Model):
 
 
     def call(self, inputs):
+        """Return bounded continuous actions for the input observation batch."""
         features = tf.nn.relu(self.l1(inputs))
         features = tf.nn.relu(self.l2(features))
         features = self.l3(features)
@@ -27,7 +30,9 @@ class Actor(tf.keras.Model):
 
 
 class Critic(tf.keras.Model):
+    """Action-value network for deterministic continuous-control agents."""
     def __init__(self, state_shape, action_dim, units=(400, 300), name="Critic"):
+        """Build the state-action value network and initialize its parameters."""
         super().__init__(name=name)
 
         self.l1 = Dense(units[0], name="L1")
@@ -36,6 +41,7 @@ class Critic(tf.keras.Model):
 
 
     def call(self, states, actions):
+        """Return Q-value estimates for a batch of state-action pairs."""
         features = tf.concat((states, actions), axis=1)
         features = tf.nn.relu(self.l1(features))
         features = tf.nn.relu(self.l2(features))
@@ -44,6 +50,7 @@ class Critic(tf.keras.Model):
 
 
 class DDPG(OffPolicyAgent):
+    """Deep deterministic policy gradient with replay and target networks."""
     def __init__(
             self,
             state_shape,
@@ -59,6 +66,7 @@ class DDPG(OffPolicyAgent):
             n_warmup=int(1e4),
             memory_capacity=int(1e6),
             **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
 
         # Define and initialize Actor network
@@ -80,6 +88,7 @@ class DDPG(OffPolicyAgent):
         self.tau = tau
 
     def get_action(self, state, test=False, tensor=False):
+        """Select an action for one observation or a batch; test mode disables exploration."""
         is_single_state = len(state.shape) == 1
         if not tensor:
             assert isinstance(state, np.ndarray)
@@ -95,6 +104,7 @@ class DDPG(OffPolicyAgent):
 
     @tf.function
     def _get_action_body(self, state, sigma, max_action):
+        """Compute policy actions for a batch on the configured TensorFlow device."""
         print("[DEBUG] initializing {_get_action_body DDPG}.")
         with tf.device(self.device):
             action = self.actor(state)
@@ -104,6 +114,9 @@ class DDPG(OffPolicyAgent):
             return tf.clip_by_value(action, -max_action, max_action)
 
     def train(self, states, actions, next_states, rewards, done, weights=None):
+        """
+        Update the actor and critics from a replay minibatch and return temporal-difference errors.
+        """
         if weights is None:
             weights = np.ones_like(rewards)
         actor_loss, critic_loss, td_errors = self._train_body(
@@ -121,6 +134,8 @@ class DDPG(OffPolicyAgent):
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones, weights):
+        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """
         print("[DEBUG] initializing {_train_body}.")
         with tf.device(self.device):
             with tf.GradientTape() as tape:
@@ -151,6 +166,7 @@ class DDPG(OffPolicyAgent):
             return actor_loss, critic_loss, td_errors
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
+        """Return temporal-difference errors for the supplied transition batch."""
         if isinstance(actions, tf.Tensor):
             rewards = tf.expand_dims(rewards, axis=1)
             dones = tf.expand_dims(dones, 1)
@@ -160,6 +176,7 @@ class DDPG(OffPolicyAgent):
 
     @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
+        """Compute batched temporal-difference errors using the target networks."""
         print("[DEBUG] initializing {_compute_td_error_body}.")
         assert len(dones.shape) == 2
         assert len(rewards.shape) == 2
@@ -177,6 +194,7 @@ class DDPG(OffPolicyAgent):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = OffPolicyAgent.get_argument(parser)
         parser.add_argument('--lr', type=float, default=3e-4, help=" <default: %(default)s>")
         parser.add_argument('--draw-reward-function', action="store_true", help=" <default: %(default)s>")

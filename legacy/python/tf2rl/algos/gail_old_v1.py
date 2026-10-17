@@ -9,10 +9,12 @@ from tf2rl.algos.policy_base import IRLPolicy
 
 
 class Discriminator(tf.keras.Model):
+    """Neural discriminator distinguishing expert samples from agent samples."""
     def __init__(self, state_shape, action_dim, units=(32, 32),
                  enable_sn=False, output_activation='sigmoid',
                  name="Discriminator", activation='relu',
                  w_ini = 'orthogonal'):
+        """Build the expert-versus-agent discriminator with the requested architecture."""
         super().__init__(name=name)
         self._enable_sn = enable_sn
         # w_ini = tf.keras.initializers.Ones()
@@ -39,6 +41,7 @@ class Discriminator(tf.keras.Model):
             self(tf.concat((dummy_state, dummy_action), axis=1))
 
     def call(self, inputs, training=None):
+        """Return discriminator outputs for the supplied batch of inputs."""
         print("[DEBUG] initializing {call GAIL}")
         if training == None:
             training = True
@@ -53,6 +56,7 @@ class Discriminator(tf.keras.Model):
             return self.l3(features, training=training)
 
     def compute_reward(self, inputs):
+        """Return stabilized discriminator log odds for each input sample."""
         print("[DEBUG] initializing {compute_reward GAIL}")
         if not self._enable_sn:
             return tf.math.log(self(inputs) + 1e-8)
@@ -66,6 +70,7 @@ class Discriminator(tf.keras.Model):
             # return self(inputs, training=False)
 
 class GAIL(IRLPolicy):
+    """Generative adversarial imitation learning from expert state-action samples."""
     def __init__(
             self,
             state_shape,
@@ -78,6 +83,7 @@ class GAIL(IRLPolicy):
             n_training = 1,
             grad_penalty_coeff = 0,
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         super().__init__(name=name, n_training=n_training, **kwargs)
         self._is_debug = is_debug
         self.grad_penalty_coeff = grad_penalty_coeff
@@ -88,6 +94,9 @@ class GAIL(IRLPolicy):
         # self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
     def train(self, agent_states, agent_acts, expert_states, expert_acts, **kwargs):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         loss, accuracy, js_divergence = self._train_body(agent_states, agent_acts, expert_states, expert_acts)
         tf.summary.scalar(name=self.policy_name+"/DiscriminatorLoss", data=loss)
         tf.summary.scalar(name=self.policy_name+"/Accuracy", data=accuracy)
@@ -98,12 +107,16 @@ class GAIL(IRLPolicy):
     def _compute_js_divergence(self, fake_logits, real_logits):
         # fake_logits = tf.sigmoid(fake_logits)
         # real_logits = tf.sigmoid(real_logits)
+        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs."""
         m = (fake_logits + real_logits) / 2.
         return tf.reduce_mean((
             fake_logits * tf.math.log(fake_logits / m + 1e-8) + real_logits * tf.math.log(real_logits / m + 1e-8)) / 2.)
 
     @tf.function
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         print("[DEBUG] initializing {_train_body GAIL}...")
         epsilon = 1e-8
         with tf.device(self.device):
@@ -138,6 +151,9 @@ class GAIL(IRLPolicy):
         return loss, accuracy, js_divergence
 
     def inference(self, states, actions, next_states=None):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         if states.ndim == actions.ndim == 1:
             states = np.expand_dims(states, axis=0)
             actions = np.expand_dims(actions, axis=0)
@@ -146,12 +162,16 @@ class GAIL(IRLPolicy):
 
     @tf.function
     def _inference_body(self, inputs):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         print("[DEBUG] initializing {_inference_body}...")
         with tf.device(self.device):
             return self.disc.compute_reward(inputs)
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = IRLPolicy.get_argument(parser)
         # parser.add_argument('--enable-sn', action='store_true')
         return parser

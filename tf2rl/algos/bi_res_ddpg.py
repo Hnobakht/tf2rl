@@ -12,12 +12,15 @@ class BiResDDPG(DDPG):
     """
 
     def __init__(self, eta=0.05, name="BiResDDPG", **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         kwargs["name"] = name
         super().__init__(**kwargs)
         self._eta = eta
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones, weights):
+        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 td_errors1, td_errors2 = self._compute_td_error_body(
@@ -49,12 +52,14 @@ class BiResDDPG(DDPG):
             return actor_loss, critic_loss, tf.abs(td_errors1) + tf.abs(td_errors2)
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
+        """Return temporal-difference errors for the supplied transition batch."""
         td_error1, td_error2 = self._compute_td_error_body(
             states, actions, next_states, rewards, dones)
         return np.squeeze(np.abs(td_error1.numpy()) + np.abs(td_error2.numpy()))
 
     @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
+        """Compute batched temporal-difference errors using the target networks."""
         with tf.device(self.device):
             not_dones = 1. - tf.cast(dones, dtype=tf.float32)
             # Compute standard TD error
@@ -73,6 +78,7 @@ class BiResDDPG(DDPG):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = DDPG.get_argument(parser)
         parser.add_argument('--eta', type=float, default=0.05)
         return parser

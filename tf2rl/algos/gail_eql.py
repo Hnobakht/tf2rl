@@ -10,6 +10,7 @@ Discriminator_EQL = EquationNetwork
 
 
 def equation_arguments(parser):
+    """Add equation-network architecture, sparsity, and export options to the parser."""
     parser.add_argument('--update-delay', type=int, default=3)
     parser.add_argument('--dropout', default='.5,0.')
     parser.add_argument('-v', '--v', default='2,1')
@@ -25,6 +26,7 @@ def equation_arguments(parser):
 
 
 class GAIL_EQL(GAIL):
+    """GAIL with an equation discriminator and optional staged parameter pruning."""
     equation_discriminator = True
 
     def __init__(self, state_shape, action_dim, training_stages=None, num_layers=2,
@@ -33,6 +35,7 @@ class GAIL_EQL(GAIL):
                  masking_starting_step=0, lmbda=0, regularizer_starting_step=0,
                  drop_out=None, tau=0., exclude=None, grad_penalty_coeff=0,
                  prune_threshold=.001, **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         if mask_rate or masking_starting_step or regularizer_starting_step:
             raise NotImplementedError("Use training_stages for deterministic sparsity and pruning")
         if (lmbda or training_stages is not None) and (tau or atol):
@@ -53,27 +56,37 @@ class GAIL_EQL(GAIL):
                 update_target_variables(self.disc_target.weights, self.disc.weights, tau=1.)
 
     def _make_discriminator(self, *args):
+        """Build the discriminator used to distinguish expert and agent samples."""
         return EquationNetwork(**self._equation_config)
 
     @property
     def equation_model(self):
+        """Return the equation network used for reward inference and export."""
         return self.disc_target if self.tau > 0 else self.disc
 
     def _before_update(self):
+        """Prepare the equation sparsity stage before the discriminator update."""
         self.disc.prepare_update()
 
     def train(self, *args, **kwargs):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         result = super().train(*args, **kwargs)
         if result is not None:
             self.disc.write_sparsity_summaries()
         return result
 
     def _after_update(self):
+        """Finalize sparsity masks and update any target discriminator after training."""
         self.disc.finish_update()
         if self.tau > 0:
             update_target_variables(self.disc_target.weights, self.disc.weights, tau=self.tau)
 
     def inference(self, states, actions, next_states=None, apply_atol=False):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         states, actions = np.asarray(states, np.float32), np.asarray(actions, np.float32)
         if states.ndim == 1:
             states, actions = states[None], actions[None]
@@ -82,17 +95,22 @@ class GAIL_EQL(GAIL):
 
     @tf.function
     def _inference_body_atol(self, inputs):
+        """Evaluate rewards using a copy with small weights suppressed by the tolerance."""
         update_target_variables(self.disc_target.weights,
                                 [tf.where(tf.abs(w) > self.atol, w, 0.) for w in self.disc.weights])
         return self.disc_target.compute_reward(inputs)
 
     @tf.function
     def _inference_body(self, inputs):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         with tf.device(self.device):
             return (self.disc_target if self.tau > 0 else self.disc).compute_reward(inputs)
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         return equation_arguments(GAIL.get_argument(parser))
 
 

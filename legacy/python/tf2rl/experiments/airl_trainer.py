@@ -12,6 +12,7 @@ from tf2rl.algos.sac import SAC
 from tf2rl.algos.airl_sac import AIRL_SAC
 
 class AIRLTrainer(IRLTrainer):
+    """Train an AIRL reward model alongside an off-policy generator."""
     def __init__(
             self,
             policy,
@@ -24,6 +25,7 @@ class AIRLTrainer(IRLTrainer):
             expert_logp=None,
             test_env=None,
             **kwargs):
+        """Configure training, replay storage, evaluation, and checkpoint handling."""
         assert "airl" in irl.name, "[ERROR] This trainer is only for the AIRL algorithms."
         assert expert_logp is not None
         self._irl = irl
@@ -42,6 +44,7 @@ class AIRLTrainer(IRLTrainer):
         self._is_airl_sac = isinstance(self._policy, AIRL_SAC)
 
     def __call__(self):
+        """Run the training loop, including data collection, policy updates, and evaluation."""
         total_steps = 0
         tf.summary.experimental.set_step(total_steps)
         episode_steps = 0
@@ -189,6 +192,7 @@ class AIRLTrainer(IRLTrainer):
     def _get_train_kwargs(self, samples, noise, itr):
         # Do not allow duplication!!!
         # indices = np.random.choice(self._random_range, self._irl.batch_size, replace=False)
+        """Assemble the expert and agent minibatches needed by the IRL update."""
         indices = random.sample(self._random_range, self._irl.batch_size - self._noise_size)
         indices = np.array(indices)
         kwargs = {
@@ -207,5 +211,6 @@ class AIRLTrainer(IRLTrainer):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = IRLTrainer.get_argument(parser)
         return parser

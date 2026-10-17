@@ -10,10 +10,14 @@ from tf2rl.misc.dac_ops import dac_transitions
 
 
 def save_path(samples, filename):
+    """Save trajectory samples as a compressed joblib file."""
     joblib.dump(samples, filename, compress=3)
 
 
 def get_filenames(dirname, n_path=None):
+    """List trajectory filenames by descending training step and episode, optionally limiting the
+    count.
+    """
     pattern = re.compile(r"step_(\d+)_epi_(\d+)_return_.*\.pkl$")
     matches = [(int(match[1]), int(match[2]), path) for path in Path(dirname).iterdir()
                if (match := pattern.fullmatch(path.name))]
@@ -22,6 +26,7 @@ def get_filenames(dirname, n_path=None):
 
 
 def _augment_observation(obs, env):
+    """Add the absorbing indicator only if the observation is not already augmented."""
     obs = np.asarray(obs, dtype=np.float32)
     if obs.shape == env.observation_space.shape:
         # Already augmented exports must not acquire a second indicator.
@@ -30,6 +35,11 @@ def _augment_observation(obs, env):
 
 
 def _load(filenames, max_steps=None, env=None, with_logps=False, absorbing=True):
+    """Load and validate expert transitions, optionally adding DAC masks and log probabilities.
+
+    The returned arrays use the historical keys, including ``not_dones`` for boolean done flags or
+    three-valued DAC masks when an environment is supplied.
+    """
     if not filenames:
         raise ValueError("No expert trajectory files found")
     rows = []
@@ -94,14 +104,18 @@ def _load(filenames, max_steps=None, env=None, with_logps=False, absorbing=True)
 
 
 def load_trajectories(filenames, max_steps=None, env=None, absorbing=True):
+    """Load expert transition arrays, optionally augmenting observations and DAC masks."""
     return _load(filenames, max_steps, env, absorbing=absorbing)
 
 
 def load_trajectories_with_logps(filenames, max_steps=None, env=None, absorbing=True):
+    """Load expert transitions and action log probabilities, optionally applying DAC augmentation.
+    """
     return _load(filenames, max_steps, env, with_logps=True, absorbing=absorbing)
 
 
 def restore_latest_n_traj(dirname, n_path=10, max_steps=None, is_logps=False, env=None,
                           absorbing=True):
+    """Load the newest trajectory files with optional log probabilities and DAC augmentation."""
     filenames = get_filenames(dirname, n_path)
     return _load(filenames, max_steps, env, with_logps=is_logps, absorbing=absorbing)

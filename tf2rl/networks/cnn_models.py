@@ -1,6 +1,7 @@
 from tensorflow.keras import layers
 
 def CNN_model():
+    """Construct experimental CNN layers; this unfinished helper references undefined names."""
     base_layers = []
     base_layers.append(layers.Conv2D(32, kernel_size=(8, 8), strides=(4,4), padding='same', activation='relu'))
     base_layers.append(layers.Conv2D(64, kernel_size=(4, 4), strides=(2,2), padding='same', activation='relu'))

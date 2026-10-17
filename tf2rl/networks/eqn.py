@@ -9,7 +9,9 @@ import tensorflow as tf
 
 
 class _EquationParameters(tf.keras.layers.Layer):
+    """Shared equation-layer weight masking and permanent pruning operations."""
     def _build_masks(self):
+        """Create non-trainable weight and bias masks when sparsity is enabled."""
         if self.sparse:
             self.w_mask = self.add_weight(name="w_mask", shape=self.w.shape,
                                           initializer="ones", trainable=False)
@@ -17,16 +19,19 @@ class _EquationParameters(tf.keras.layers.Layer):
                                           initializer="ones", trainable=False)
 
     def effective_parameters(self):
+        """Return weights and biases with sparsity masks applied when enabled."""
         if self.sparse:
             return self.w * self.w_mask, self.b * self.b_mask
         return self.w, self.b
 
     def project_masks(self):
+        """Force pruned equation weights and biases back to zero in place."""
         if self.sparse:
             self.w.assign(self.w * self.w_mask)
             self.b.assign(self.b * self.b_mask)
 
     def prune(self, threshold):
+        """Permanently mask parameters below the threshold; require sparsity to be enabled."""
         if not self.sparse:
             raise ValueError("Construct the network with sparsity enabled before pruning")
         self.w_mask.assign(self.w_mask * tf.cast(tf.abs(self.w) >= threshold, self.w.dtype))
@@ -35,12 +40,14 @@ class _EquationParameters(tf.keras.layers.Layer):
 
 
 class EquationLayer(_EquationParameters):
+    """Affine features followed by configurable unary and binary equation operators."""
     OPERATORS = (("id", 1), ("sin", 1), ("cos", 1), ("sig", 1),
                  ("log", 1), ("mult", 2), ("div", 2))
 
     def __init__(self, w_initializer="random_normal", b_initializer="random_normal", v=1,
                  lmbda=0, constraint=None, mask=None, exclude=None, dynamic_lmbda=False,
                  sparse=False, **kwargs):
+        """Configure operator groups, exclusions, initializers, and optional sparsity masks."""
         super().__init__(**kwargs)
         if int(v) != v or v < 1:
             raise ValueError("Each equation layer needs a positive integer v")
@@ -61,6 +68,7 @@ class EquationLayer(_EquationParameters):
             raise ValueError("lmbda must be finite and nonnegative")
 
     def build(self, input_shape):
+        """Create layer weights and biases for the input feature dimension."""
         width = self.input_width * self.v
         self.w = self.add_weight(name="w", shape=(input_shape[-1], width),
                                  initializer=self.w_initializer, constraint=self.constraint)
@@ -70,6 +78,7 @@ class EquationLayer(_EquationParameters):
         super().build(input_shape)
 
     def call(self, inputs, training=None, l1_regularizers=0):
+        """Apply affine equation operators and add L1 and log/division domain penalties."""
         w, b = self.effective_parameters()
         affine = tf.matmul(inputs, w) + b
         if self.lmbda:
@@ -106,9 +115,11 @@ class EquationLayer(_EquationParameters):
 
 
 class EquationOutput(_EquationParameters):
+    """Scalar affine equation output with optional activation, masking, and L1 loss."""
     def __init__(self, w_initializer="random_normal", b_initializer="random_normal",
                  activation=None, lmbda=0, constraint=None, mask=None, dynamic_lmbda=False,
                  regularize=False, sparse=False, **kwargs):
+        """Configure the scalar output activation, initializers, and optional regularization."""
         super().__init__(**kwargs)
         self.w_initializer = tf.keras.initializers.get(w_initializer)
         self.b_initializer = tf.keras.initializers.get(b_initializer)
@@ -120,6 +131,7 @@ class EquationOutput(_EquationParameters):
         self.sparse = sparse
 
     def build(self, input_shape):
+        """Create layer weights and biases for the input feature dimension."""
         self.w = self.add_weight(name="w", shape=(input_shape[-1], 1),
                                  initializer=self.w_initializer, constraint=self.constraint)
         self.b = self.add_weight(name="b", shape=(1,), initializer=self.b_initializer,
@@ -128,6 +140,7 @@ class EquationOutput(_EquationParameters):
         super().build(input_shape)
 
     def call(self, inputs, training=None, l1_regularizers=0):
+        """Return the scalar affine output with its configured activation and regularization."""
         w, b = self.effective_parameters()
         if self.lmbda:
             self.add_loss(tf.cast(self.lmbda, self.w.dtype)
@@ -143,6 +156,8 @@ class EquationNetwork(tf.keras.Model):
                  w_initializer="random_normal", b_initializer="random_normal",
                  is_lmbda_dynamic=False, regularize_output=False, training_stages=None,
                  prune_threshold=0.001):
+        """Build the equation layers and configure optional warmup, sparsity, and fixed-mask stages.
+        """
         super().__init__(name=name)
         if not math.isfinite(lmbda) or lmbda < 0:
             raise ValueError("lmbda must be finite and nonnegative")
@@ -199,6 +214,8 @@ class EquationNetwork(tf.keras.Model):
 
     def call(self, inputs, training=None, l1_regularizers=0):
         # Historically an omitted training flag enabled EQN dropout.
+        """Evaluate the equation network and add active L1 losses; omitted training enables dropout.
+        """
         training = True if training is None else training
         features = tf.cast(inputs, tf.float32)
         for layer in self.eql_layers:
@@ -210,9 +227,11 @@ class EquationNetwork(tf.keras.Model):
 
     @property
     def parameter_layers(self):
+        """Return equation layers and the output layer, excluding dropout layers."""
         return [layer for layer in self.eql_layers if isinstance(layer, EquationLayer)] + [self.layer_out]
 
     def l1_norm(self):
+        """Return the sum of absolute effective equation weights and biases."""
         return tf.add_n([tf.reduce_sum(tf.abs(value)) for layer in self.parameter_layers
                          for value in layer.effective_parameters()])
 
@@ -232,6 +251,7 @@ class EquationNetwork(tf.keras.Model):
         self.l1_coefficient.assign(self.sparsity_lambda if phase == 1 else 0.)
 
     def finish_update(self):
+        """Reapply pruning masks and count one completed discriminator update."""
         if self.sparse:
             # Adam momentum can move a masked weight despite a zero gradient.
             for layer in self.parameter_layers:
@@ -239,6 +259,7 @@ class EquationNetwork(tf.keras.Model):
             self.sparsity_updates.assign_add(1)
 
     def sparsity_metrics(self):
+        """Return the sparsity phase, active parameter count, L1 norm, and update diagnostics."""
         total = sum(math.prod(value.shape) for layer in self.parameter_layers
                     for value in (layer.w, layer.b))
         active = (tf.add_n([tf.reduce_sum(value) for layer in self.parameter_layers
@@ -251,10 +272,12 @@ class EquationNetwork(tf.keras.Model):
                 "discriminator_updates": self.sparsity_updates if self.sparse else 0}
 
     def write_sparsity_summaries(self):
+        """Write equation sparsity diagnostics to TensorBoard when sparsity is enabled."""
         if self.sparse:
             for name, value in self.sparsity_metrics().items():
                 tf.summary.scalar("EQN/" + name, value)
 
     def compute_reward(self, inputs, l1_regularizers=0):
+        """Return stabilized discriminator log odds for each input sample."""
         probability = self(inputs, training=False)
         return tf.math.log(probability + 1e-8) - tf.math.log(1 - probability + 1e-8)

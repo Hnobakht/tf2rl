@@ -17,6 +17,7 @@ from tf2rl.networks.equation_export import expression_statistics
 
 
 def evaluate(policy, seeds, indicator=.1):
+    """Return seeded Pendulum episode returns for a policy, or random actions if absent."""
     env = gym.vector.SyncVectorEnv([
         lambda: AbsorbingWrapper(gym.make('Pendulum-v1'), indicator) for _ in seeds
     ])
@@ -42,12 +43,14 @@ def evaluate(policy, seeds, indicator=.1):
 
 
 def summarize(returns):
+    """Return episode returns together with their mean, sample deviation, and range."""
     return {'mean': float(np.mean(returns)), 'std': float(np.std(returns, ddof=1)),
             'min': float(np.min(returns)), 'max': float(np.max(returns)),
             'returns': returns.tolist()}
 
 
 def main():
+    """Compare trained policies with random actions on matching Pendulum seeds."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('runs', nargs='+', type=Path)
     parser.add_argument('--episodes', type=int, default=50)

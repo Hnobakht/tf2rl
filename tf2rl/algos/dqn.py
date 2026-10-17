@@ -10,8 +10,10 @@ from tf2rl.misc.huber_loss import huber_loss
 
 
 class QFunc(tf.keras.Model):
+    """Neural network estimating values for each discrete action."""
     def __init__(self, state_shape, action_dim, units=(32, 32),
                  name="QFunc", enable_dueling_dqn=False, enable_noisy_dqn=False):
+        """Build the discrete-action value network with the requested optional DQN enhancements."""
         super().__init__(name=name)
         self._enable_dueling_dqn = enable_dueling_dqn
         self._enable_noisy_dqn = enable_noisy_dqn
@@ -30,6 +32,7 @@ class QFunc(tf.keras.Model):
                                              dtype=np.float32)))
 
     def call(self, inputs):
+        """Return one Q-value per discrete action for each observation."""
         features = self.l1(inputs)
         features = self.l2(features)
         if self._enable_dueling_dqn:
@@ -44,6 +47,7 @@ class QFunc(tf.keras.Model):
 
 
 class DQN(OffPolicyAgent):
+    """Deep Q-learning agent with epsilon-greedy exploration and a target network."""
     def __init__(
             self,
             state_shape,
@@ -64,6 +68,7 @@ class DQN(OffPolicyAgent):
             enable_noisy_dqn=False,
             optimizer=None,
             **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
 
         q_func = q_func if q_func is not None else QFunc
@@ -104,6 +109,7 @@ class DQN(OffPolicyAgent):
         self._enable_noisy_dqn = enable_noisy_dqn
 
     def get_action(self, state, test=False, tensor=False):
+        """Select an action for one observation or a batch; test mode disables exploration."""
         if isinstance(state, LazyFrames):
             state = np.array(state)
         if not tensor:
@@ -134,10 +140,12 @@ class DQN(OffPolicyAgent):
 
     @tf.function
     def _get_action_body(self, state):
+        """Return greedy actions from the batched Q-network predictions."""
         q_values = self.q_func(state)
         return tf.argmax(q_values, axis=1)
 
     def train(self, states, actions, next_states, rewards, done, weights=None):
+        """Update the Q network from a replay minibatch and return temporal-difference errors."""
         if weights is None:
             weights = np.ones_like(rewards)
         td_errors, q_func_loss = self._train_body(
@@ -161,6 +169,7 @@ class DQN(OffPolicyAgent):
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones, weights):
+        """Apply a Q-network gradient update and update target weights when due."""
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 td_errors = self._compute_td_error_body(
@@ -177,6 +186,7 @@ class DQN(OffPolicyAgent):
             return td_errors, q_func_loss
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
+        """Return temporal-difference errors for the supplied transition batch."""
         if isinstance(actions, tf.Tensor):
             actions = tf.expand_dims(actions, axis=1)
             rewards = tf.expand_dims(rewards, axis=1)
@@ -187,6 +197,7 @@ class DQN(OffPolicyAgent):
 
     @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
+        """Compute batched temporal-difference errors using the target networks."""
         batch_size = states.shape[0]
         not_dones = 1. - tf.cast(dones, dtype=tf.float32)
         actions = tf.cast(actions, dtype=tf.int32)
@@ -222,6 +233,7 @@ class DQN(OffPolicyAgent):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = OffPolicyAgent.get_argument(parser)
         parser.add_argument('--enable-double-dqn', action='store_true')
         parser.add_argument('--enable-dueling-dqn', action='store_true')

@@ -21,13 +21,16 @@ def with_summary_writer(method):
     """Keep each trainer's writer and step scoped to its own execution."""
     @wraps(method)
     def wrapped(self, *args, **kwargs):
+        """Call the trainer operation inside its TensorBoard summary-writer context."""
         with self.writer.as_default(step=0):
             return method(self, *args, **kwargs)
     return wrapped
 
 
 class Trainer:
+    """Collect environment transitions, train a policy, and manage evaluation and checkpoints."""
     def __init__(self, policy, env, args, test_env=None, is_episodic=False):
+        """Configure training, replay storage, evaluation, and checkpoint handling."""
         if isinstance(args, dict):
             supplied = args
             args = policy.get_argument(self.get_argument()).parse_args([])
@@ -61,11 +64,13 @@ class Trainer:
             raise
 
     def _horizon(self, env):
+        """Return the configured episode limit or the environment time limit."""
         configured = self._episode_max_steps
         limit = env.spec.max_episode_steps if env.spec is not None else None
         return min(configured, limit) if limit is not None else configured
 
     def _set_check_point(self, model_dir):
+        """Create the TensorFlow checkpoint manager and restore a checkpoint when requested."""
         self._checkpoint = tf.train.Checkpoint(policy=self._policy)
         self.checkpoint_manager = tf.train.CheckpointManager(self._checkpoint, self._output_dir,
                                                               max_to_keep=10)
@@ -78,9 +83,11 @@ class Trainer:
 
     @staticmethod
     def _action(result):
+        """Extract the action from a policy result, accepting either an action or a tuple."""
         return result if not isinstance(result, tuple) else result[0]
 
     def _policy_observation(self, obs, update=False):
+        """Return the observation expected by the policy, optionally stripping the DAC indicator."""
         if not self._normalize_obs:
             return obs
         if update:
@@ -89,6 +96,7 @@ class Trainer:
 
     @with_summary_writer
     def __call__(self):
+        """Run the training loop, including data collection, policy updates, and evaluation."""
         if self._evaluate:
             return self.evaluate_policy_continuously()
         self.replay_buffer = get_replay_buffer(self._policy, self._env,
@@ -132,6 +140,7 @@ class Trainer:
         return self.replay_buffer
 
     def _periodic(self, total_steps):
+        """Run evaluation and save checkpoints at their configured training intervals."""
         if total_steps % self._test_interval == 0:
             reward, length = self.evaluate_policy(total_steps)
             tf.summary.scalar("Common/average_test_return", reward)
@@ -144,10 +153,12 @@ class Trainer:
 
     def evaluate_policy_continuously(self):
         # Retain the historical one-shot implementation despite the old name.
+        """Watch for new checkpoints and evaluate each restored policy."""
         return self.evaluate_policy(0)
 
     @with_summary_writer
     def evaluate_policy(self, total_steps):
+        """Evaluate the policy in the test environment and return its performance."""
         returns, lengths = [], []
         horizon = self._horizon(self._test_env)
         for episode in range(self._test_episodes):
@@ -185,12 +196,14 @@ class Trainer:
 
     def close(self):
         # Attempt every cleanup even if a viewer or summary writer fails to close.
+        """Close the summary writer and both environments, attempting every cleanup callback."""
         with ExitStack() as resources:
             resources.callback(self.writer.close)
             resources.callback(self._env.close)
             resources.callback(self._test_env.close)
 
     def _set_from_args(self, args):
+        """Copy trainer settings from the parsed command-line arguments."""
         self._max_steps = args.max_steps
         self._episode_max_steps = (args.episode_max_steps
                                    if args.episode_max_steps is not None
@@ -218,6 +231,7 @@ class Trainer:
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         if parser is None:
             parser = argparse.ArgumentParser(conflict_handler='resolve')
         # experiment settings

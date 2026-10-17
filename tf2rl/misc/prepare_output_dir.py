@@ -143,6 +143,7 @@ def prepare_output_dir(args, user_specified_dir=None, argv=None,
     return outdir
 
 def prep_log_tag(args, *kwargs):
+    """Construct the historical run-directory tag from experiment settings."""
     if len(kwargs) == 4 or len(kwargs) == 5:
         ret = kwargs[0]
         ret += '-v' if "eql" in kwargs[0] else '-u'

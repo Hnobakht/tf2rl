@@ -68,6 +68,7 @@ def update_target_variables(target_variables,
                          "variables.")
 
     def update_op(target_variable, source_variable, tau):
+        """Assign source parameters to the target, interpolating when tau is below one."""
         if tau == 1.0:
             return target_variable.assign(source_variable)
         else:
@@ -109,6 +110,7 @@ def periodic_target_update(target_variables,
     """
 
     def update_op():
+        """Apply the configured target-network update."""
         return update_target_variables(
             target_variables, source_variables, tau, use_locking)
 

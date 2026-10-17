@@ -16,6 +16,7 @@ class CriticQ(tf.keras.Model):
     """
 
     def __init__(self, state_shape, action_dim, critic_units=(256, 256), name='qf'):
+        """Build the hidden state-action layers and scalar Q-value head."""
         super().__init__(name=name)
 
         self.l1 = Dense(critic_units[0], name="L1", activation='relu')
@@ -27,6 +28,7 @@ class CriticQ(tf.keras.Model):
         self(dummy_state)
 
     def call(self, states):
+        """Return Q-value estimates for a batch of state-action pairs."""
         features = self.l1(states)
         features = self.l2(features)
         values = self.l3(features)
@@ -35,6 +37,7 @@ class CriticQ(tf.keras.Model):
 
 
 class SACDiscrete(SAC):
+    """Soft actor-critic for categorical action spaces."""
     def __init__(
             self,
             state_shape,
@@ -44,6 +47,7 @@ class SACDiscrete(SAC):
             critic_fn=None,
             target_update_interval=None,
             **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         kwargs["name"] = "SAC_discrete"
         self.actor_fn = actor_fn if actor_fn is not None else CategoricalActor
         self.critic_fn = critic_fn if critic_fn is not None else CriticQ
@@ -58,11 +62,13 @@ class SACDiscrete(SAC):
 
     def _setup_actor(self, state_shape, action_dim, actor_units, lr, max_action=1.):
         # The output of actor is categorical distribution
+        """Create the action policy and its optimizer."""
         self.actor = self.actor_fn(
             state_shape, action_dim, actor_units)
         self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
     def _setup_critic_q(self, state_shape, action_dim, critic_units, lr):
+        """Create Q-value networks, initialize their targets, and configure optimization."""
         self.qf1 = self.critic_fn(state_shape, action_dim, critic_units, name="qf1")
         self.qf2 = self.critic_fn(state_shape, action_dim, critic_units, name="qf2")
         self.qf1_target = self.critic_fn(state_shape, action_dim, critic_units, name="qf1_target")
@@ -82,6 +88,7 @@ class SACDiscrete(SAC):
         pass
 
     def train(self, states, actions, next_states, rewards, dones, weights=None):
+        """Update the actor and critics from a replay minibatch and return training diagnostics."""
         if weights is None:
             weights = np.ones_like(rewards)
 
@@ -99,6 +106,8 @@ class SACDiscrete(SAC):
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones, weights):
+        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """
         with tf.device(self.device):
             batch_size = states.shape[0]
             not_dones = 1. - tf.cast(dones, dtype=tf.float32)
@@ -183,6 +192,7 @@ class SACDiscrete(SAC):
                 tf.reduce_mean(current_action_logp))
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
+        """Return temporal-difference errors for the supplied transition batch."""
         td_errors_q1, td_errors_q2 = self._compute_td_error_body(
             states, actions, next_states, rewards, dones)
         return np.squeeze(
@@ -191,6 +201,7 @@ class SACDiscrete(SAC):
 
     @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
+        """Compute batched temporal-difference errors using the target networks."""
         with tf.device(self.device):
             batch_size = states.shape[0]
             not_dones = 1. - tf.cast(dones, dtype=tf.float32)
@@ -222,6 +233,7 @@ class SACDiscrete(SAC):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = SAC.get_argument(parser)
         parser.add_argument('--target-update-interval', type=int, default=None)
         return parser

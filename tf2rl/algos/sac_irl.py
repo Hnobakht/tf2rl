@@ -8,12 +8,14 @@ from tf2rl.policies.tfp_gaussian_actor import GaussianActor
 
 
 def dac_target(rewards, masks, next_q, next_logp, alpha, discount, absorbing):
+    """Return SAC targets using DAC masks for continuing, terminal, and absorbing transitions."""
     continuation = tf.maximum(masks, 0.)
     soft_q = next_q - alpha * next_logp * (continuation if absorbing else 1.)
     return rewards + discount * soft_q * (1. if absorbing else continuation)
 
 
 def dac_actor_loss(logp, q, masks, alpha, absorbing):
+    """Return the SAC actor objective, excluding absorbing self-loops when enabled."""
     values = alpha * logp - q
     if not absorbing:
         return tf.reduce_mean(values)
@@ -23,8 +25,10 @@ def dac_actor_loss(logp, q, masks, alpha, absorbing):
 
 
 class CriticQ(tf.keras.Model):
+    """Neural action-value function over state-action pairs."""
     def __init__(self, state_shape, action_dim, critic_units=(256, 256), name='qf',
                  initializer=None):
+        """Build the hidden state-action layers and scalar Q-value head."""
         super().__init__(name=name)
         initializer = initializer or tf.keras.initializers.GlorotUniform()
         self.base_layers = [tf.keras.layers.Dense(unit, activation='relu', kernel_initializer=initializer)
@@ -35,6 +39,7 @@ class CriticQ(tf.keras.Model):
         self(tf.zeros((1,) + tuple(state_shape)), tf.zeros((1, action_dim)))
 
     def call(self, states, actions):
+        """Return Q-value estimates for a batch of state-action pairs."""
         features = tf.concat((states, actions), axis=1)
         for layer in self.base_layers:
             features = layer(features)
@@ -42,11 +47,13 @@ class CriticQ(tf.keras.Model):
 
 
 class SAC_IRL(OffPolicyAgent):
+    """SAC generator supporting three-valued DAC masks and absorbing-state training."""
     def __init__(self, state_shape, action_dim, name="SAC", max_action=1., lr=3e-4,
                  lr_alpha=3e-4, actor_units=(400, 300), critic_units=(400, 300),
                  tau=5e-3, alpha=.2, auto_alpha=False, n_warmup=int(1e4),
                  memory_capacity=int(2e6), is_debug=False, is_absorbed_state=False,
                  is_xla=False, **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
         if len(state_shape) != 1:
             raise ValueError("SAC_IRL supports vector observations")
@@ -87,12 +94,14 @@ class SAC_IRL(OffPolicyAgent):
         self._td_graph = tf.function(self._compute_td_error_body, reduce_retracing=True)
 
     def get_action(self, state, test=False):
+        """Return actions and their log probabilities; test mode selects deterministic actions."""
         state = np.asarray(state, dtype=np.float32)
         single = state.ndim == self.state_ndim
         actions, logps = self._action_graph(state[None] if single else state, tf.constant(test))
         return (actions.numpy()[0], logps.numpy()[0]) if single else (actions, logps)
 
     def _get_action_body(self, state, test):
+        """Return batched policy actions and log probabilities on the configured device."""
         with tf.device(self.device):
             return self.actor(state, training=False, test=test)
 
@@ -111,6 +120,11 @@ class SAC_IRL(OffPolicyAgent):
     def train(self, states, actions, next_states, rewards, dones, weights=None):
         # Historical research objectives use uniform replay. Importance weighting
         # is unsupported rather than silently ignored.
+        """Update SAC from DAC-masked transitions and return target Q values.
+
+        Masks are -1 for absorbing self-loops, 0 for terminal transitions, and 1 for continuing
+        transitions. Non-unit importance weights are unsupported.
+        """
         if weights is not None and not np.allclose(weights, 1):
             raise NotImplementedError("SAC_IRL does not implement importance-weighted losses")
         args = [tf.convert_to_tensor(x, dtype=tf.float32)
@@ -123,6 +137,7 @@ class SAC_IRL(OffPolicyAgent):
         return result[0]
 
     def _target(self, next_states, rewards, masks):
+        """Compute stopped-gradient SAC targets using the three-valued DAC masks."""
         next_actions, next_logp = self.actor(next_states)
         if self._is_absorbed_state:
             next_actions *= tf.maximum(masks, 0.)[:, None]
@@ -132,6 +147,8 @@ class SAC_IRL(OffPolicyAgent):
                                            self.discount, self._is_absorbed_state))
 
     def _train_body(self, states, actions, next_states, rewards, dones):
+        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """
         with tf.device(self.device):
             rewards, masks = tf.reshape(rewards, (-1,)), tf.reshape(dones, (-1,))
             with tf.GradientTape(persistent=True) as tape:
@@ -162,16 +179,19 @@ class SAC_IRL(OffPolicyAgent):
                 tf.reduce_max(logp), tf.reduce_mean(logp))
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
+        """Return temporal-difference errors for the supplied transition batch."""
         args = [tf.convert_to_tensor(x, dtype=tf.float32)
                 for x in (states, actions, next_states, rewards, dones)]
         return self._td_graph(*args).numpy()
 
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
+        """Compute batched temporal-difference errors using the target networks."""
         target = self._target(next_states, tf.reshape(rewards, (-1,)), tf.reshape(dones, (-1,)))
         return target - self.qf1(states, actions)
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = OffPolicyAgent.get_argument(parser)
         parser.add_argument('--lr', type=float, default=3e-4)
         parser.add_argument('--lr-alpha', type=float, default=3e-4)

@@ -5,8 +5,10 @@ from tensorflow.keras.layers import Dense
 
 
 class CategoricalActor(tf.keras.Model):
+    """Neural policy representing a categorical distribution over discrete actions."""
     def __init__(self, state_shape, action_dim, units=(256, 256),
                  hidden_activation="relu", name="CategoricalActor"):
+        """Build hidden features and the categorical action-probability head."""
         super().__init__(name=name)
         self.action_dim = action_dim
 
@@ -22,6 +24,7 @@ class CategoricalActor(tf.keras.Model):
             np.zeros(shape=(1,)+state_shape, dtype=np.float32)))
 
     def _compute_features(self, states):
+        """Transform a batch of observations into policy features."""
         features = states
 
         for cur_layer in self.base_layers:
@@ -49,10 +52,12 @@ class CategoricalActor(tf.keras.Model):
         return dist
 
     def compute_prob(self, states):
+        """Return the categorical distribution logits for a batch of states."""
         dist = self._compute_dist(states)
         return dist.logits
 
     def call(self, states, test=False):
+        """Return actions and log probabilities; use greedy actions in test mode."""
         dist = self._compute_dist(states)
 
         if test:
@@ -64,6 +69,7 @@ class CategoricalActor(tf.keras.Model):
         return action, log_prob
 
     def compute_entropy(self, states):
+        """Return the action distribution entropy for each observation."""
         dist = self._compute_dist(states)
         return dist.entropy()
 
@@ -85,12 +91,16 @@ class CategoricalActor(tf.keras.Model):
 
 
 class CategoricalActorCritic(CategoricalActor):
+    """Categorical policy with a state-value head for actor-critic training."""
     def __init__(self, *args, **kwargs):
+        """Create the categorical policy and its additional state-value head."""
         tf.keras.Model.__init__(self)
         self.v = Dense(1, activation="linear")
         super().__init__(*args, **kwargs)
 
     def call(self, states, test=False):
+        """Return actions and log probabilities, plus state values; use greedy actions in test mode.
+        """
         features = self._compute_feature(states)
         probs = self.out_prob(features)
         dist = tfp.distributions.Categorical(probs)

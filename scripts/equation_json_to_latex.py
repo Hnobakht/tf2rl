@@ -30,6 +30,7 @@ _ARITY = {
 
 
 def _finite(value):
+    """Return whether a value is a finite built-in integer or float."""
     return type(value) in (int, float) and math.isfinite(value)
 
 
@@ -72,6 +73,7 @@ def validate_graph(graph):
 
 
 def _escape(text):
+    """Escape LaTeX special characters and replace line breaks with spaces."""
     replacements = {
         "\\": r"\textbackslash{}",
         "{": r"\{",
@@ -88,6 +90,7 @@ def _escape(text):
 
 
 def _input_name(name):
+    """Map an input name to a familiar mathematical symbol or escaped LaTeX text."""
     pendulum = {
         "cos_theta": r"\cos(\theta)",
         "sin_theta": r"\sin(\theta)",
@@ -104,6 +107,7 @@ def _input_name(name):
 
 
 def _number(value, precision):
+    """Format a coefficient as LaTeX, optionally rounding its significant digits."""
     text = repr(value) if precision is None else format(value, f".{precision}g")
     if "e" in text.lower():
         mantissa, exponent = text.lower().split("e")
@@ -112,6 +116,7 @@ def _number(value, precision):
 
 
 def _affine_terms(node, args, number):
+    """Format nonzero affine coefficients and bias as signed LaTeX terms."""
     terms = [
         (w < 0, rf"{number(abs(w))}\,\left({arg}\right)")
         for w, arg in zip(node["weights"], args)
@@ -126,6 +131,7 @@ def _affine_terms(node, args, number):
 
 
 def _expression(node, args, number):
+    """Render one supported equation graph operation as LaTeX."""
     op = node["op"]
     if op == "affine":
         return "".join(_affine_terms(node, args, number))
@@ -212,6 +218,7 @@ def graph_to_latex(
 
 
 def main():
+    """Convert equation JSON files to LaTeX using the selected formatting options."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

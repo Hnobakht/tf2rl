@@ -4,16 +4,21 @@ import tensorflow as tf
 from tf2rl.algos.vail import VAIL
 
 class VAILfO(VAIL):
+    """Variational adversarial imitation from observation transitions."""
     def __init__(
             self,
             state_shape,
             action_dim,
             name="VAILfO",
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         super().__init__(state_shape=state_shape ,action_dim=action_dim,  name = name, **kwargs)
 
 
     def train(self, agent_states, agent_next_states, expert_states, expert_next_states, **kwargs):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         with tf.device(self.device):
             agent_states, agent_next_states, expert_states, expert_next_states = \
                 tuple([tf.constant(i) for i in (agent_states, agent_next_states,
@@ -32,6 +37,9 @@ class VAILfO(VAIL):
 
 
     def inference(self, states, actions, next_states):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         assert states.shape == next_states.shape
         if states.ndim == 1:
             states = np.expand_dims(states, axis=0)
@@ -42,6 +50,7 @@ class VAILfO(VAIL):
         return out
 
     def _init_static_graph(self, state_shape, action_dim, n_latent_unit):
+        """Set up TensorFlow signatures and traced model, training, or inference computations."""
         print("[DEBUG] initializing {_init_static_graph VAILfO}")
         # Compiling the static graphs
         assert len(state_shape) == 1, "[ERROR] This SAC only supports RAM env {_init_static_graph SAC}"

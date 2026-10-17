@@ -3,8 +3,10 @@
 These source files were moved out of the runtime package during the 2026-10-16
 cleanup. They preserve different research objectives, old interfaces and experiment
 recipes; they are not installed or imported by the current training CLI.
-`manifest.json` records each original path and SHA-256 hash. The archived source is
-unchanged and may require the historical dependencies and surrounding source tree.
+`manifest.json` records each original path and SHA-256 hash. The archived code may
+require the historical dependencies and surrounding source tree. Docstrings were
+subsequently added for readability; the hashes refer to the original source before
+those documentation edits.
 
 The supported implementations are:
 

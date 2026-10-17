@@ -39,7 +39,9 @@ def pointmass_model(name):
 
 
 class MJCModel(object):
+    """MuJoCo XML model with helpers for tree construction and temporary-file export."""
     def __init__(self, name):
+        """Create a named MuJoCo XML model with an empty root element."""
         self.name = name
         self.root = MJCTreeNode("mujoco").add_attr('model', name)
 
@@ -57,31 +59,39 @@ class MJCModel(object):
             yield f
 
     def open(self):
+        """Write the model XML to a temporary file and return its rewound handle."""
         self.file = tempfile.NamedTemporaryFile(mode='w+', suffix='.xml', delete=True)
         self.root.write(self.file)
         self.file.seek(0)
         return self.file
 
     def close(self):
+        """Close and delete the temporary XML file opened for this model."""
         self.file.close()
 
     def find_attr(self, attr, value):
+        """Find the first XML node with the requested attribute value."""
         return self.root.find_attr(attr, value)
 
     def __getstate__(self):
+        """Return the empty serialized state used by this legacy model."""
         return {}
 
     def __setstate__(self, state):
+        """Accept serialized state without restoring any model attributes."""
         pass
 
 
 class MJCTreeNode(object):
+    """XML tree node supporting chained attributes and dynamic child-tag creation."""
     def __init__(self, name):
+        """Create an XML element with no attributes or child nodes."""
         self.name = name
         self.attrs = {}
         self.children = []
 
     def add_attr(self, key, value):
+        """Set an XML attribute, converting numeric sequences to space-separated text."""
         if isinstance(value, str):
             pass
         elif isinstance(value, list) or isinstance(value, np.ndarray):
@@ -93,7 +103,9 @@ class MJCTreeNode(object):
         return self
 
     def __getattr__(self, name):
+        """Return a factory that appends an XML child with the requested tag."""
         def wrapper(**kwargs):
+            """Create and append an XML child node with the supplied attributes."""
             newnode =  MJCTreeNode(name)
             for (k, v) in kwargs.items():
                 newnode.add_attr(k, v)
@@ -102,6 +114,7 @@ class MJCTreeNode(object):
         return wrapper
 
     def dfs(self):
+        """Yield this XML node and its descendants in depth-first order."""
         yield self
         if self.children:
             for child in self.children:
@@ -120,6 +133,7 @@ class MJCTreeNode(object):
 
 
     def write(self, ostream, tabs=0):
+        """Write this XML subtree to a stream with indentation."""
         contents = ' '.join(['%s="%s"'%(k,v) for (k,v) in self.attrs.items()])
         if self.children:
             ostream.write('\t'*tabs)
@@ -133,6 +147,7 @@ class MJCTreeNode(object):
             ostream.write('<%s %s/>\n' % (self.name, contents))
 
     def __str__(self):
+        """Return the opening XML tag and its attributes."""
         s = "<"+self.name
         s += ' '.join(['%s="%s"'%(k,v) for (k,v) in self.attrs.items()])
         return s+">"

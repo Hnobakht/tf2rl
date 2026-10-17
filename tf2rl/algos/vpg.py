@@ -9,7 +9,9 @@ from tf2rl.envs.atari_wrapper import LazyFrames
 
 
 class CriticV(tf.keras.Model):
+    """Neural state-value function for policy-gradient agents."""
     def __init__(self, state_shape, units, name='critic_v', hidden_activation='relu'):
+        """Build the hidden state layers and scalar value head."""
         super().__init__(name=name)
 
         self.l1 = Dense(units[0], name="L1", activation=hidden_activation)
@@ -21,6 +23,7 @@ class CriticV(tf.keras.Model):
                 np.zeros(shape=(1,)+state_shape, dtype=np.float32)))
 
     def call(self, inputs):
+        """Return a scalar state-value estimate for each observation."""
         features = self.l1(inputs)
         features = self.l2(features)
         values = self.l3(features)
@@ -29,6 +32,7 @@ class CriticV(tf.keras.Model):
 
 
 class VPG(OnPolicyAgent):
+    """Vanilla policy gradient with a learned state-value baseline."""
     def __init__(
             self,
             state_shape,
@@ -46,6 +50,7 @@ class VPG(OnPolicyAgent):
             hidden_activation_critic="relu",
             name="VPG",
             **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(name=name, **kwargs)
         self._is_discrete = is_discrete
 
@@ -83,6 +88,7 @@ class VPG(OnPolicyAgent):
         self._state_ndim = np.array(state_shape).shape[0]
 
     def get_action(self, state, test=False):
+        """Return actions and their log probabilities; test mode selects deterministic actions."""
         if isinstance(state, LazyFrames):
             state = np.array(state)
         msg = "Input instance should be np.ndarray, not {}".format(type(state))
@@ -99,6 +105,7 @@ class VPG(OnPolicyAgent):
             return action.numpy(), logp.numpy()
 
     def get_action_and_val(self, state, test=False):
+        """Return a policy action, its log probability, and the estimated state value."""
         if isinstance(state, LazyFrames):
             state = np.array(state)
         is_single_input = state.ndim == self._state_ndim
@@ -115,6 +122,7 @@ class VPG(OnPolicyAgent):
 
     @tf.function
     def _get_action_logp_v_body(self, state, test):
+        """Return sampled actions, their log probabilities, and state-value estimates."""
         if self.actor_critic:
             return self.actor_critic(state, test)
         else:
@@ -124,6 +132,7 @@ class VPG(OnPolicyAgent):
 
     @tf.function
     def _get_action_body(self, state, test):
+        """Return batched policy actions and log probabilities on the configured device."""
         if self.actor_critic is not None:
             action, logp = self.actor_critic(state, test)
             return action, logp
@@ -132,6 +141,7 @@ class VPG(OnPolicyAgent):
 
     def train(self, states, actions, advantages, logp_olds, returns):
         # Train actor and critic
+        """Update the policy and value function from sampled returns and advantages."""
         actor_loss, logp_news = self._train_actor_body(
             states, actions, advantages, logp_olds)
         critic_loss = self._train_critic_body(states, returns)
@@ -156,6 +166,7 @@ class VPG(OnPolicyAgent):
 
     @tf.function
     def _train_actor_body(self, states, actions, advantages, logp_olds):
+        """Apply one policy-gradient update and return the optimization diagnostics."""
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 log_probs = self.actor.compute_log_probs(states, actions)
@@ -171,6 +182,7 @@ class VPG(OnPolicyAgent):
 
     @tf.function
     def _train_critic_body(self, states, returns):
+        """Fit the state-value network to the supplied return targets."""
         with tf.device(self.device):
             # Train baseline
             with tf.GradientTape() as tape:

@@ -12,9 +12,11 @@ from tf2rl.algos.policy_base import IRLPolicy
 
 
 class Discriminator(tf.keras.Model):
+    """Neural discriminator distinguishing expert samples from agent samples."""
     def __init__(self, state_shape, action_dim, units=(32, 32), enable_sn=False,
                  output_activation='sigmoid', name="Discriminator", activation='relu',
                  w_ini='orthogonal'):
+        """Build the expert-versus-agent discriminator with the requested architecture."""
         super().__init__(name=name)
         # enable_sn was ignored by the original dense GAIL; retain its behavior.
         self._enable_sn = enable_sn
@@ -26,19 +28,23 @@ class Discriminator(tf.keras.Model):
         self(tf.zeros((1, state_shape[0] + action_dim)), training=False)
 
     def call(self, inputs, training=None):
+        """Return discriminator outputs for the supplied batch of inputs."""
         return self.l3(self.l2(self.l1(inputs)))
 
     def compute_reward(self, inputs):
+        """Return the log discriminator probability as an imitation reward."""
         return tf.math.log(self(inputs, training=False) + 1e-8)
 
 
 class GAIL(IRLPolicy):
+    """Generative adversarial imitation learning from expert state-action samples."""
     equation_discriminator = False
     requires_log_probs = False
 
     def __init__(self, state_shape, action_dim, units=(32, 32), lr=0.001,
                  enable_sn=False, name="GAIL", is_debug=False, n_training=1,
                  grad_penalty_coeff=0, is_absorbed_state=False, update_delay=1, **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         super().__init__(name=name, n_training=n_training, **kwargs)
         if update_delay < 1 or grad_penalty_coeff < 0:
             raise ValueError("update_delay must be positive and GP coefficient nonnegative")
@@ -52,9 +58,13 @@ class GAIL(IRLPolicy):
         self.optimizer.build(self.disc.trainable_variables)
 
     def _make_discriminator(self, state_shape, action_dim, units, enable_sn):
+        """Build the discriminator used to distinguish expert and agent samples."""
         return Discriminator(state_shape, action_dim, units, enable_sn)
 
     def train(self, agent_states, agent_acts, expert_states, expert_acts, itr=1, **kwargs):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         if itr % self.update_delay:
             return None
         self._before_update()
@@ -67,13 +77,18 @@ class GAIL(IRLPolicy):
         return result
 
     def _before_update(self):
+        """Provide a no-op hook for subclasses before discriminator updates."""
         pass
 
     def _after_update(self):
+        """Provide a no-op hook for subclasses after discriminator updates."""
         pass
 
     @tf.function
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts, l1_regularizers=0):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 real = self.disc(tf.concat((expert_states, expert_acts), axis=1))
@@ -96,6 +111,9 @@ class GAIL(IRLPolicy):
     _compute_js_divergence = staticmethod(js_divergence)
 
     def inference(self, states, actions, next_states=None):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         states, actions = np.asarray(states, np.float32), np.asarray(actions, np.float32)
         if states.ndim == 1:
             states, actions = states[None], actions[None]
@@ -103,9 +121,13 @@ class GAIL(IRLPolicy):
 
     @tf.function
     def _inference_body(self, inputs):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         with tf.device(self.device):
             return self.disc.compute_reward(inputs)
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         return IRLPolicy.get_argument(parser)

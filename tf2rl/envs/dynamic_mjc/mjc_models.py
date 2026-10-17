@@ -3,6 +3,7 @@ import numpy as np
 
 
 def block_push(object_pos=(0,0,0), goal_pos=(0,0,0)):
+    """Build the MuJoCo model for the block-pushing task."""
     mjcmodel = MJCModel('block_push')
     mjcmodel.root.compiler(inertiafromgeom="true",angle="radian",coordinate="local")
     mjcmodel.root.option(timestep="0.01",gravity="0 0 0",iterations="20",integrator="Euler")
@@ -59,6 +60,7 @@ NORTH = 2
 SOUTH = 3
 
 def twod_corridor(direction=EAST, length=1.2):
+    """Build the two-dimensional corridor MuJoCo model."""
     mjcmodel = MJCModel('twod_corridor')
     mjcmodel.root.compiler(inertiafromgeom="true", angle="radian", coordinate="local")
     mjcmodel.root.option(timestep="0.01", gravity="0 0 0", iterations="20", integrator="Euler")
@@ -123,6 +125,7 @@ LEFT = 0
 RIGHT = 1
 
 def point_mass_maze(direction=RIGHT, length=1.2, borders=True):
+    """Build a point-mass MuJoCo model inside a maze."""
     mjcmodel = MJCModel('twod_maze')
     mjcmodel.root.compiler(inertiafromgeom="true", angle="radian", coordinate="local")
     mjcmodel.root.option(timestep="0.01", gravity="0 0 0", iterations="20", integrator="Euler")
@@ -172,6 +175,7 @@ def point_mass_maze(direction=RIGHT, length=1.2, borders=True):
 
 
 def ant_maze(direction=RIGHT, length=6.0):
+    """Build an ant model inside the configured maze."""
     mjcmodel = MJCModel('ant_maze')
     mjcmodel.root.compiler(inertiafromgeom="true", angle="degree", coordinate="local")
     mjcmodel.root.option(timestep="0.01", gravity="0 0 -9.8", iterations="20", integrator="Euler")
@@ -265,6 +269,7 @@ def ant_maze(direction=RIGHT, length=6.0):
 
 
 def ant_maze_corridor(direction=RIGHT, height=6.0, width=10.0):
+    """Build an ant model in a corridor maze."""
     mjcmodel = MJCModel('ant_maze_corridor')
     mjcmodel.root.compiler(inertiafromgeom="true", angle="degree", coordinate="local")
     mjcmodel.root.option(timestep="0.01", gravity="0 0 -9.8", iterations="20", integrator="Euler")
@@ -359,6 +364,7 @@ def ant_maze_corridor(direction=RIGHT, height=6.0, width=10.0):
 
 
 def pusher(goal_pos=np.array([0.45, -0.05, -0.323])):
+    """Build the MuJoCo model for the pusher task."""
     mjcmodel = MJCModel('pusher')
     mjcmodel.root.compiler(inertiafromgeom="true", angle="radian", coordinate="local")
     mjcmodel.root.option(timestep="0.01", gravity="0 0 0", iterations="20", integrator="Euler")
@@ -445,6 +451,7 @@ def pusher(goal_pos=np.array([0.45, -0.05, -0.323])):
 
 
 def swimmer():
+    """Build the MuJoCo swimmer model."""
     mjcmodel = MJCModel('swimmer')
     mjcmodel.root.compiler(inertiafromgeom="true", angle="degree", coordinate="local")
     mjcmodel.root.option(timestep=0.01, viscosity=0.1, density=4000, integrator="RK4", collision="predefined")
@@ -481,6 +488,7 @@ def swimmer():
     return mjcmodel
 
 def swimmer_rllab():
+    """Build the swimmer model using the rllab task configuration."""
     mjcmodel = MJCModel('swimmer')
     mjcmodel.root.compiler(inertiafromgeom="true", angle="degree", coordinate="local")
     mjcmodel.root.option(timestep=0.01, viscosity=0.1, density=4000, integrator="Euler", iterations=1000, collision="predefined")

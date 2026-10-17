@@ -8,12 +8,14 @@ from tf2rl.algos.policy_base import IRLPolicy
 
 
 class Discriminator(tf.keras.Model):
+    """Variational discriminator with an encoded Gaussian information bottleneck."""
     LOG_SIG_CAP_MAX = 2  # np.e**2 = 7.389
     LOG_SIG_CAP_MIN = -20  # np.e**-10 = 4.540e-05
     EPS = 1e-6
 
     def __init__(self, state_shape, action_dim, units=(32, 32), decoder_units = (1,),
                  n_latent_unit=32, enable_sn=False, name="Discriminator", w_ini = 'orthogonal'):
+        """Build the expert-versus-agent discriminator with the requested architecture."""
         super().__init__(name=name)
         self._encoder_list = []
         self._decoder_list = []
@@ -35,12 +37,14 @@ class Discriminator(tf.keras.Model):
         # with tf.device("/cpu:0"):
         #     self([dummy_state, dummy_action])
     def _encoder_model(self, units, activation):
+        """Build the encoder that predicts latent Gaussian parameters."""
         index=0
         for unit in units:
             self._encoder_list.append(Dense(unit, name="L_EN"+str(index), activation=activation))
             index += 1
 
     def _decoder_model(self, units, activation, output_activation):
+        """Build the discriminator network that maps latent samples to outputs."""
         if len(units) > 1:
             index = 0
             for unit in units:
@@ -53,6 +57,9 @@ class Discriminator(tf.keras.Model):
 
     # @tf.function(experimental_relax_shapes=True)
     def call(self, inputs, training=None):
+        """Encode inputs, sample latent features, and return discriminator outputs and latent
+        statistics.
+        """
         print("[DEBUG] initializing {call VAIL}")
         # Encoder
         # features = tf.concat(inputs, axis=1)
@@ -81,6 +88,7 @@ class Discriminator(tf.keras.Model):
 
     @tf.function(experimental_relax_shapes=True)
     def compute_reward(self, inputs):
+        """Return stabilized discriminator log odds for each input sample."""
         print("[DEBUG] initializing {compute_reward VAIL}")
         # features = tf.concat(inputs, axis=1)
         # features = self.l1(inputs)
@@ -92,6 +100,7 @@ class Discriminator(tf.keras.Model):
 
 
 class VAIL(GAIL):
+    """Variational adversarial imitation learning with a latent information bottleneck."""
     def __init__(
             self,
             state_shape,
@@ -107,6 +116,7 @@ class VAIL(GAIL):
             n_training = 1,
             name="VAIL",
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         IRLPolicy.__init__(self, name=name, n_training=1, **kwargs)
         assert isinstance(decoder_units, tuple) and isinstance(units, tuple),\
             "[ERORR] the units should be tuple or int [__init__ VAIL]"
@@ -122,6 +132,9 @@ class VAIL(GAIL):
 
 
     def train(self, agent_states, agent_acts, expert_states, expert_acts, **kwargs):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         loss, accuracy, real_kl, fake_kl, js_divergence = self._train_body(agent_states, agent_acts,
                                                                            expert_states, expert_acts)
         tf.summary.scalar(name=self.policy_name+"/DiscriminatorLoss", data=loss)
@@ -148,6 +161,9 @@ class VAIL(GAIL):
 
     @tf.function(experimental_relax_shapes=True)
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         print("[DEBUG] initializing {_train_body VAIL}.")
         epsilon = 1e-8
         with tf.device(self.device):
@@ -181,6 +197,7 @@ class VAIL(GAIL):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = IRLPolicy.get_argument(parser)
         # parser.add_argument('--enable-sn', action='store_true')
         parser.add_argument('--units-decoder', type=str, default="1",

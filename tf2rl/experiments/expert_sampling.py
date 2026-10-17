@@ -5,7 +5,9 @@ import numpy as np
 
 
 class ExpertSampler:
+    """Sample expert minibatches without replacement, optionally mixing in replay noise."""
     def __init__(self, data, batch_size, noise_ratio=0.):
+        """Validate expert arrays and split the batch size into expert and noise samples."""
         if not 0 <= noise_ratio < 1:
             raise ValueError("discriminator_noise must lie in [0, 1)")
         self.data = {key: np.asarray(value, dtype=np.float32) for key, value in data.items()}
@@ -22,6 +24,7 @@ class ExpertSampler:
         self.indices = range(next(iter(lengths)))
 
     def sample(self, replay, random_replay=None):
+        """Sample an expert minibatch, optionally replacing its noise fraction with agent replay."""
         if random_replay is None:
             indices = np.asarray(random.sample(self.indices, self.expert_size))
             expert = {key: value[indices] for key, value in self.data.items()}

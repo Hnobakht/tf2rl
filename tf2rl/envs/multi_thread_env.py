@@ -54,6 +54,7 @@ class MultiThreadEnv(object):
 
     @property
     def original_env(self):
+        """Return the sample environment used to expose spaces and metadata."""
         return self._sample_env
 
     def step(self, actions, name=None):
@@ -100,6 +101,9 @@ class MultiThreadEnv(object):
             done: np.array
         """
         def _process(offset):
+            """Step this thread's environments and record observations, rewards, and episode
+            boundaries.
+            """
             for idx_env in range(offset, offset+self.batch_thread):
                 new_obs, reward, terminated, truncated, _ = self.envs[idx_env].step(
                     actions[idx_env].numpy())
@@ -132,10 +136,12 @@ class MultiThreadEnv(object):
         return obs, reward, done
 
     def py_observation(self):
+        """Return the latest observations from all environments as a float32 batch."""
         obs = np.stack(self.list_obs, axis=0).astype(np.float32)
         return obs
 
     def py_reset(self):
+        """Reset all environments and return the stacked initial observations."""
         for idx_env, env in enumerate(self.envs):
             obs, _ = env.reset()
             # TODO: Allow flexible data type
@@ -145,12 +151,15 @@ class MultiThreadEnv(object):
 
     @property
     def max_action(self):
+        """Return the first action coordinate's upper bound as a scalar."""
         return float(self._sample_env.action_space.high[0])
 
     @property
     def min_action(self):
+        """Return the first action coordinate's lower bound as a scalar."""
         return float(self._sample_env.action_space.low[0])
 
     @property
     def state_dim(self):
+        """Return the observation-vector dimension of the sample environment."""
         return self._sample_env.observation_space.shape[0]

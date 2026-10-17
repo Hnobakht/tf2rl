@@ -9,6 +9,7 @@ from tf2rl.envs.utils import is_discrete
 
 
 def get_space_size(space):
+    """Return the replay-field shape for a Box or Discrete space; reject other space types."""
     if isinstance(space, Box):
         return space.shape
     elif isinstance(space, Discrete):
@@ -18,6 +19,7 @@ def get_space_size(space):
 
 
 def get_default_rb_dict(size, env):
+    """Return the standard replay-buffer schema for the environment and capacity."""
     return {
         "size": size,
         "default_dtype": np.float32,
@@ -34,6 +36,9 @@ def get_default_rb_dict(size, env):
 
 def get_replay_buffer(policy, env, irl=None, save_logp=False, use_prioritized_rb=False,
                       use_nstep_rb=False, n_step=1, size=None):
+    """Create replay storage for the policy, with optional log densities, prioritization, and n-step
+    returns.
+    """
     if policy is None or env is None:
         return None
 
@@ -84,6 +89,7 @@ def get_replay_buffer(policy, env, irl=None, save_logp=False, use_prioritized_rb
     return ReplayBuffer(**kwargs)
 
 def get_replay_buffer_no_policy(env, save_logp=True, size=None):
+    """Create environment-shaped replay storage without requiring a policy instance."""
     if env is None:
         return None
 

@@ -5,6 +5,7 @@ import numpy as np
 
 
 class Done(Enum):
+    """Three-valued DAC replay masks: absorbing -1, terminal 0, and continuing 1."""
     ABSORBING = -1.0
     DONE = 0.0
     NOT_DONE = 1.0

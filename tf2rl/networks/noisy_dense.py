@@ -8,6 +8,7 @@ import tensorflow as tf
 
 
 class NoisyDense(tf.keras.layers.Layer):
+    """Dense layer with learned noise scales and freshly perturbed weights on each call."""
     def __init__(
             self,
             units,
@@ -23,6 +24,8 @@ class NoisyDense(tf.keras.layers.Layer):
             bias_constraint=None,
             trainable=True,
             **kwargs):
+        """Configure dense units, trainable noise scales, activation, and parameter initialization.
+        """
         if 'input_shape' not in kwargs and 'input_dim' in kwargs:
             kwargs['input_shape'] = (kwargs.pop('input_dim'),)
         super().__init__(**kwargs)
@@ -41,6 +44,7 @@ class NoisyDense(tf.keras.layers.Layer):
         self.trainable = trainable
 
     def build(self, input_shape):
+        """Create dense weights, biases, and their trainable noise scales for the input shape."""
         assert len(input_shape) >= 2
         self.input_dim = input_shape[-1]
         self.kernel_shape = tf.constant((self.input_dim, self.units))
@@ -85,6 +89,7 @@ class NoisyDense(tf.keras.layers.Layer):
 
     def call(self, inputs):
         # Implement Eq.(9)
+        """Return dense activations using freshly sampled uniform parameter noise."""
         perturbed_kernel = (self.kernel
                             + self.sigma_kernel
                             * tf.random.uniform(shape=self.kernel_shape))
@@ -99,4 +104,5 @@ class NoisyDense(tf.keras.layers.Layer):
         return outputs
 
     def compute_output_shape(self, input_shape):
+        """Return the output batch shape with the configured number of units."""
         return (input_shape[0], self.units)

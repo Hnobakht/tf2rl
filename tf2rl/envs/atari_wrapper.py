@@ -35,6 +35,7 @@ cv2.ocl.setUseOpenCL(False)
 
 
 class NoopResetEnv(gym.Wrapper):
+    """Randomize initial Atari states with a sequence of no-op actions."""
     def __init__(self, env, noop_max=30):
         """
         Sample initial states by taking random number of no-ops on reset.
@@ -65,10 +66,12 @@ class NoopResetEnv(gym.Wrapper):
         return obs
 
     def step(self, ac):
+        """Forward the action to the wrapped environment."""
         return self.env.step(ac)
 
 
 class FireResetEnv(gym.Wrapper):
+    """Start Atari games that require a FIRE action after reset."""
     def __init__(self, env):
         """
         Take action on reset for environments that are fixed until firing.
@@ -78,6 +81,7 @@ class FireResetEnv(gym.Wrapper):
         assert len(env.unwrapped.get_action_meanings()) >= 3
 
     def reset(self, **kwargs):
+        """Reset and issue the actions needed to start the Atari game."""
         self.env.reset(**kwargs)
         obs, _, done, _ = self.env.step(1)
         if done:
@@ -88,10 +92,12 @@ class FireResetEnv(gym.Wrapper):
         return obs
 
     def step(self, ac):
+        """Forward the action to the wrapped environment."""
         return self.env.step(ac)
 
 
 class EpisodicLifeEnv(gym.Wrapper):
+    """Treat loss of an Atari life as an episode boundary during training."""
     def __init__(self, env):
         """
         Make end-of-life == end-of-episode, but only reset on true game over.
@@ -102,6 +108,7 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.was_real_done = True
 
     def step(self, action):
+        """Step the game and mark loss of life as an episode boundary."""
         obs, reward, done, info = self.env.step(action)
         self.was_real_done = done
         # check current lives, make loss of life terminal,
@@ -131,6 +138,7 @@ class EpisodicLifeEnv(gym.Wrapper):
 
 
 class MaxAndSkipEnv(gym.Wrapper):
+    """Repeat actions and max-pool the last two Atari frames."""
     def __init__(self, env, skip=4):
         """
         Return only every `skip`-th frame
@@ -163,11 +171,14 @@ class MaxAndSkipEnv(gym.Wrapper):
         return max_frame, total_reward, done, info
 
     def reset(self, **kwargs):
+        """Reset the wrapped environment and return its initial observation."""
         return self.env.reset(**kwargs)
 
 
 class ClipRewardEnv(gym.RewardWrapper):
+    """Clip rewards to their sign while preserving the environment interface."""
     def __init__(self, env):
+        """Wrap the environment and configure its observation and episode handling."""
         gym.RewardWrapper.__init__(self, env)
 
     def reward(self, reward):
@@ -176,6 +187,7 @@ class ClipRewardEnv(gym.RewardWrapper):
 
 
 class WarpFrame(gym.ObservationWrapper):
+    """Resize Atari images and optionally convert them to grayscale."""
     def __init__(self, env, width=84, height=84, grayscale=True, dict_space_key=None):
         """
         Warp frames to 84x84 as done in the Nature paper and later work.
@@ -208,6 +220,7 @@ class WarpFrame(gym.ObservationWrapper):
             original_space.shape) == 3
 
     def observation(self, obs):
+        """Resize the observation and optionally convert it to grayscale."""
         if self._key is None:
             frame = obs
         else:
@@ -230,16 +243,20 @@ class WarpFrame(gym.ObservationWrapper):
 
 
 class ProcessFrame84(gym.ObservationWrapper):
+    """Convert raw Atari frames to 84-by-84 grayscale observations."""
     def __init__(self, env=None):
+        """Declare the byte-valued 84-by-84 grayscale observation space."""
         super(ProcessFrame84, self).__init__(env)
         self.observation_space = spaces.Box(
             low=0, high=255, shape=(84, 84, 1), dtype=np.uint8)
 
     def observation(self, obs):
+        """Convert the raw image to an 84-by-84 grayscale observation."""
         return ProcessFrame84.process(obs)
 
     @staticmethod
     def process(frame):
+        """Convert an Atari image to the 84-by-84 grayscale observation format."""
         if frame.size == 210 * 160 * 3:
             img = np.reshape(frame, [210, 160, 3]).astype(np.float32)
         elif frame.size == 250 * 160 * 3:
@@ -255,6 +272,7 @@ class ProcessFrame84(gym.ObservationWrapper):
 
 
 class FrameStack(gym.Wrapper):
+    """Stack recent image observations along the channel axis."""
     def __init__(self, env, k):
         """
         Stack k last frames.
@@ -270,23 +288,28 @@ class FrameStack(gym.Wrapper):
             dtype=env.observation_space.dtype)
 
     def reset(self):
+        """Reset the environment and fill the history with copies of the initial frame."""
         ob = self.env.reset()
         for _ in range(self.k):
             self.frames.append(ob)
         return self._get_ob()
 
     def step(self, action):
+        """Step the environment and append the new frame to the observation history."""
         ob, reward, done, info = self.env.step(action)
         self.frames.append(ob)
         return self._get_ob(), reward, done, info
 
     def _get_ob(self):
+        """Return the current observations as a lazy frame stack."""
         assert len(self.frames) == self.k
         return LazyFrames(list(self.frames))
 
 
 class ScaledFloatFrame(gym.ObservationWrapper):
+    """Convert byte image observations to float32 values scaled by 1/255."""
     def __init__(self, env):
+        """Declare the floating-point image observation space for the wrapped environment."""
         gym.ObservationWrapper.__init__(self, env)
         self.observation_space = gym.spaces.Box(
             low=0, high=1, shape=env.observation_space.shape, dtype=np.float32)
@@ -294,10 +317,12 @@ class ScaledFloatFrame(gym.ObservationWrapper):
     def observation(self, observation):
         # careful! This undoes the memory optimization, use
         # with smaller replay buffers only.
+        """Convert a byte image to float32 values in the range zero to one."""
         return np.array(observation).astype(np.float32) / 255.0
 
 
 class LazyFrames(object):
+    """Delay frame concatenation so replay entries can share stored image arrays."""
     def __init__(self, frames):
         """
         This object ensures that common frames between the observations are only stored once.
@@ -309,40 +334,49 @@ class LazyFrames(object):
         self._out = None
 
     def _force(self):
+        """Concatenate frames on first access and cache the resulting array."""
         if self._out is None:
             self._out = np.concatenate(self._frames, axis=-1)
             self._frames = None
         return self._out
 
     def __array__(self, dtype=None):
+        """Materialize the stacked frames as a NumPy array with the requested dtype."""
         out = self._force()
         if dtype is not None:
             out = out.astype(dtype)
         return out
 
     def __len__(self):
+        """Return the length of the materialized frame stack."""
         return len(self._force())
 
     def __getitem__(self, i):
+        """Return the requested slice of the materialized frame stack."""
         return self._force()[..., i]
 
 
 class NdarrayFrames(gym.Wrapper):
+    """Return stacked Atari frames as ordinary NumPy arrays."""
     def __init__(self, env):
+        """Wrap a frame-stacked environment to materialize lazy observations as arrays."""
         gym.Wrapper.__init__(self, env)
 
     def reset(self):
+        """Reset the environment and materialize its stacked observation."""
         obs = self.env.reset()
         assert isinstance(obs, LazyFrames)
         return np.array(obs)
 
     def step(self, action):
+        """Step the wrapped environment and materialize the stacked observations."""
         next_obs, rew, done, env_info = self.env.step(action)
         assert isinstance(next_obs, LazyFrames)
         return np.array(next_obs), rew, done, env_info
 
 
 def make_atari(env_id, max_episode_steps=None):
+    """Create an Atari environment with no-op reset and action-repeat preprocessing."""
     env = gym.make(env_id)
     assert 'NoFrameskip' in env.spec.id
     env = NoopResetEnv(env, noop_max=30)

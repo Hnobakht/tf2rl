@@ -9,16 +9,21 @@ from tf2rl.networks.atari_model import AtariQFunc
 
 # Prepare env and policy function
 class env_fn:
+    """Callable environment factory for the distributed training example."""
     def __init__(self, env_name):
+        """Store environment configuration for later construction by a worker."""
         self.env_name = env_name
 
     def __call__(self):
+        """Create an environment with the stored worker configuration."""
         return gym.make(self.env_name)
 
 
 class policy_fn:
+    """Callable policy factory for the distributed DQN example."""
     def __init__(self, args, n_warmup, target_replace_interval, batch_size,
                  optimizer, epsilon_decay_rate, QFunc):
+        """Store DQN settings and the Q-network factory used by worker policies."""
         self.args = args
         self.n_warmup = n_warmup
         self.target_replace_interval = target_replace_interval
@@ -29,6 +34,7 @@ class policy_fn:
 
     def __call__(self, env, name, memory_capacity=int(1e6),
                  gpu=-1, noise_level=0.3):
+        """Create a DQN worker policy using the stored network and training settings."""
         return DQN(
             name=name,
             enable_double_dqn=self.args.enable_double_dqn,
@@ -51,11 +57,13 @@ class policy_fn:
 
 
 def get_weights_fn(policy):
+    """Return the policy weights shared with distributed actors."""
     return [policy.q_func.weights,
             policy.q_func_target.weights]
 
 
 def set_weights_fn(policy, weights):
+    """Load shared policy weights into a distributed actor."""
     q_func_weights, qfunc_target_weights = weights
     update_target_variables(
         policy.q_func.weights, q_func_weights, tau=1.)

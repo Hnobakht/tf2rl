@@ -8,8 +8,10 @@ from tf2rl.policies.tfp_gaussian_actor import GaussianActor
 
 
 class CriticQ(tf.keras.Model):
+    """Neural action-value function over state-action pairs."""
     def __init__(self, state_shape, action_dim, critic_units=(256, 256), name='qf',
                  initializer = tf.keras.initializers.glorot_uniform()):
+        """Build the hidden state-action layers and scalar Q-value head."""
         super().__init__(name=name)
 
         self.base_layers = []
@@ -20,6 +22,7 @@ class CriticQ(tf.keras.Model):
 
 
     def call(self, states, actions):
+        """Return Q-value estimates for a batch of state-action pairs."""
         features = tf.concat((states, actions), axis=1)
         for cur_layer in self.base_layers:
             features = cur_layer(features)
@@ -28,6 +31,7 @@ class CriticQ(tf.keras.Model):
 
 
 class SAC(OffPolicyAgent):
+    """Soft actor-critic with stochastic actions, twin Q networks, and entropy regularization."""
     def     __init__(
             self,
             state_shape,
@@ -45,6 +49,7 @@ class SAC(OffPolicyAgent):
             memory_capacity=int(2e6),
             is_debug = False,
             **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(
             name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
         self._is_debug = is_debug
@@ -69,12 +74,14 @@ class SAC(OffPolicyAgent):
         self._init_static_graph(state_shape, action_dim)
 
     def _setup_actor(self, state_shape, action_dim, actor_units, lr, max_action=1.):
+        """Create the action policy and its optimizer."""
         with tf.device(self.device):
             self.actor = GaussianActor(state_shape, action_dim, max_action, squash=True,units=actor_units,
                                        initializer=tf.keras.initializers.TruncatedNormal(stddev=1e-3))
             self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
     def _setup_critic_q(self, state_shape, action_dim, critic_units, lr):
+        """Create Q-value networks, initialize their targets, and configure optimization."""
         with tf.device(self.device):
             self.qf1 = CriticQ(state_shape, action_dim, critic_units, name="qf1")
             self.qf2 = CriticQ(state_shape, action_dim, critic_units, name="qf2")
@@ -89,6 +96,7 @@ class SAC(OffPolicyAgent):
                                         self.qf2_target.weights, tau=1.)
 
     def get_action(self, state, test=False):
+        """Return actions and their log probabilities; test mode selects deterministic actions."""
         assert isinstance(state, np.ndarray)
         is_single_state = len(state.shape) == self.state_ndim
 
@@ -100,12 +108,16 @@ class SAC(OffPolicyAgent):
         return (action.numpy()[0], logps.numpy()[0]) if is_single_state else (action, logps)
 
     def _get_action_body(self, state, test):
+        """Return batched policy actions and log probabilities on the configured device."""
         print("[DEBUG] initializing {_get_action_body SAC}...")
         with tf.device(self.device):
             actions, log_pis = self.actor(state, test)
         return actions, log_pis
 
     def train(self, states, actions, next_states, rewards, dones, weights=None):
+        """
+        Update the actor and critics from a replay minibatch and return temporal-difference errors.
+        """
         if weights is None:
             weights = np.ones_like(rewards)
 
@@ -130,6 +142,8 @@ class SAC(OffPolicyAgent):
         return td_errors
 
     def _train_body(self, states, actions, next_states, rewards, dones):#, weights):
+        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """
         print("[DEBUG] initializing {_train_body SAC}")
         with tf.device(self.device):
             assert len(dones.shape) == 2
@@ -187,6 +201,7 @@ class SAC(OffPolicyAgent):
             logp)
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
+        """Return temporal-difference errors for the supplied transition batch."""
         if isinstance(actions, tf.Tensor):
             rewards = tf.expand_dims(rewards, axis=1)
             dones = tf.expand_dims(dones, 1)
@@ -200,6 +215,7 @@ class SAC(OffPolicyAgent):
         return td_errors.numpy()
 
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
+        """Compute batched temporal-difference errors using the target networks."""
         print("[DEBUG] initializing {_compute_td_error_body}...")
         with tf.device(self.device):
             not_dones = 1. - tf.cast(dones, dtype=tf.float32)
@@ -216,6 +232,7 @@ class SAC(OffPolicyAgent):
         return td_errors_q1
 
     def get_logp(self, state):
+        """Return policy log probabilities for the supplied states and actions."""
         assert isinstance(state, np.ndarray)
         is_single_state = len(state.shape) == self.state_ndim
 
@@ -228,12 +245,14 @@ class SAC(OffPolicyAgent):
         return logp.numpy()[0] if is_single_state else logp.numpy()
 
     def _get_logp_body(self, state):
+        """Evaluate action log probabilities on the configured TensorFlow device."""
         with tf.device(self.device):
             logp = self.actor(state)[1]
         return logp
 
     def _init_static_graph(self, state_shape, action_dim):
         # Compiling the static graphs
+        """Set up TensorFlow signatures and traced model, training, or inference computations."""
         assert len(state_shape) == 1, "[ERROR] This SAC only supports RAM env {_init_static_graph SAC}"
         with tf.device(self.device):
             self._train_body_graph = tf.function(self._train_body,
@@ -263,6 +282,7 @@ class SAC(OffPolicyAgent):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = OffPolicyAgent.get_argument(parser)
         parser.add_argument('--lr', type=float, default=3e-4, help=" <default: %(default)s>")
         parser.add_argument('--lr-alpha', type=float, default=3e-4, help=" <default: %(default)s>")

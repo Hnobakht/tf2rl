@@ -10,9 +10,11 @@ from tf2rl.misc.get_replay_buffer import get_replay_buffer
 
 
 class IRLTrainer(Trainer):
+    """Alternate generator training with expert-versus-agent discriminator updates."""
     def __init__(self, policy, env, args, irl, expert_obs, expert_next_obs, expert_act,
                  test_env=None, is_perb_rew=False, is_episodic=False, is_short_memory=False,
                  discriminator_noise=0, random_epoch=0, expert_logp=None):
+        """Configure training, replay storage, evaluation, and checkpoint handling."""
         self._irl = irl
         self._export_equation_enabled = getattr(args, "export_equation", False)
         if is_perb_rew or is_short_memory:
@@ -52,6 +54,7 @@ class IRLTrainer(Trainer):
             self._checkpoint_irl, self._output_dir + "/irl", max_to_keep=10)
 
     def _get_train_kwargs(self, samples, noise=None, itr=1):
+        """Assemble the expert and agent minibatches needed by the IRL update."""
         random_replay = (self.random_replay_buffer if self._random_epoch
                          and itr % (self._random_epoch * self._episode_max_steps) == 0 else None)
         expert = self._sampler.sample(self.replay_buffer, random_replay)
@@ -64,6 +67,7 @@ class IRLTrainer(Trainer):
 
     @with_summary_writer
     def __call__(self):
+        """Run the training loop, including data collection, policy updates, and evaluation."""
         if self._evaluate:
             return self.evaluate_policy_continuously()
         self.replay_buffer = get_replay_buffer(self._policy, self._env, irl=self._irl)
@@ -131,6 +135,7 @@ class IRLTrainer(Trainer):
         return self.replay_buffer
 
     def _export_equation(self, step):
+        """Save the current inference equation when equation export is enabled."""
         if not self._export_equation_enabled:
             return
         from tf2rl.networks.equation_export import (
@@ -158,6 +163,7 @@ class IRLTrainer(Trainer):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = Trainer.get_argument(parser)
         parser.add_argument('--expert-path-dir', default=None)
         parser.add_argument('--discriminator-noise', type=float, default=.15)

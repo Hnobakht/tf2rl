@@ -8,8 +8,10 @@ from tf2rl.policies.tfp_gaussian_actor import GaussianActor, GaussianActor_pixel
 
 
 class CriticQ(tf.keras.Model):
+    """Neural action-value function over state-action pairs."""
     def __init__(self, state_shape, action_dim, critic_units=(256, 256), name='qf',
                  initializer = tf.keras.initializers.glorot_uniform()):
+        """Build the hidden state-action layers and scalar Q-value head."""
         super().__init__(name=name)
 
         self.base_layers = []
@@ -22,6 +24,7 @@ class CriticQ(tf.keras.Model):
 
 
     def call(self, states, actions, training=None):
+        """Return Q-value estimates for a batch of state-action pairs."""
         features = tf.concat((states, actions), axis=1)
         for cur_layer in self.base_layers:
             features = cur_layer(features)
@@ -29,8 +32,10 @@ class CriticQ(tf.keras.Model):
         return tf.squeeze(values, axis=1)
 
 class CriticQ_pixels(tf.keras.Model):
+    """Action-value function using convolutional features from pixel observations."""
     def __init__(self, state_shape, action_dim, critic_units=None, name='qf',
                  initializer = tf.keras.initializers.glorot_uniform()):
+        """Build the image encoder and state-action Q-value layers."""
         super().__init__(name=name)
 
         self.cnn_layers = []
@@ -49,6 +54,7 @@ class CriticQ_pixels(tf.keras.Model):
         self.out_layer = Dense(1, name="Q", activation='linear', kernel_initializer=initializer)
 
     def call(self, states, actions, training=None):
+        """Return Q-value estimates for a batch of state-action pairs."""
         features_cnn = tf.cast(states/255, dtype=tf.float32)
         print("[DEBUG] input: " + str(states.shape) + " [call CriticQ_pixels]")
         for cnn_layer in self.cnn_layers:
@@ -64,6 +70,7 @@ class CriticQ_pixels(tf.keras.Model):
 
 
 class SAC(OffPolicyAgent):
+    """Soft actor-critic with stochastic actions, twin Q networks, and entropy regularization."""
     def     __init__(
             self,
             state_shape,
@@ -83,6 +90,7 @@ class SAC(OffPolicyAgent):
             is_debug = False,
             is_xla = False,
             **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(
             name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
         self._is_debug = is_debug
@@ -110,6 +118,7 @@ class SAC(OffPolicyAgent):
         self._init_static_graph(state_shape, action_dim)
 
     def _setup_actor(self, state_shape, action_dim, actor_units, lr, max_action=1.):
+        """Create the action policy and its optimizer."""
         std_dev = 1e-4 if self._is_pixels else 1e-3
         policy_func = GaussianActor_pixels if self._is_pixels else GaussianActor
         with tf.device(self.device):
@@ -120,6 +129,7 @@ class SAC(OffPolicyAgent):
             self.actor_optimizer.build(self.actor.trainable_variables)
 
     def _setup_critic_q(self, state_shape, action_dim, critic_units, lr):
+        """Create Q-value networks, initialize their targets, and configure optimization."""
         Q_func = CriticQ_pixels if self._is_pixels else CriticQ
         with tf.device(self.device):
             q_initializer = tf.keras.initializers.GlorotUniform()
@@ -139,6 +149,7 @@ class SAC(OffPolicyAgent):
             update_target_variables(self.qf2_target.weights, self.qf2.weights, tau=1.)
 
     def get_action(self, state, test=False):
+        """Return actions and their log probabilities; test mode selects deterministic actions."""
         assert isinstance(state, np.ndarray)
         is_single_state = len(state.shape) == self.state_ndim
 
@@ -152,12 +163,16 @@ class SAC(OffPolicyAgent):
         return (action.numpy()[0], logps.numpy()[0]) if is_single_state else (action, logps)
 
     def _get_action_body(self, state, test):
+        """Return batched policy actions and log probabilities on the configured device."""
         print("[DEBUG] initializing {_get_action_body SAC}...")
         with tf.device(self.device):
             actions, log_pis = self.actor(state, training=False, test=test)
         return actions, log_pis
 
     def train(self, states, actions, next_states, rewards, dones, weights=None):
+        """
+        Update the actor and critics from a replay minibatch and return temporal-difference errors.
+        """
         if weights is None:
             weights = np.ones_like(rewards)
 
@@ -182,6 +197,8 @@ class SAC(OffPolicyAgent):
         return td_errors
 
     def _train_body(self, states, actions, next_states, rewards, dones):#, weights):
+        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """
         print("[DEBUG] initializing {_train_body SAC}")
         with tf.device(self.device):
             assert len(dones.shape) == 2
@@ -239,6 +256,7 @@ class SAC(OffPolicyAgent):
             logp)
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
+        """Return temporal-difference errors for the supplied transition batch."""
         if isinstance(actions, tf.Tensor):
             rewards = tf.expand_dims(rewards, axis=1)
             dones = tf.expand_dims(dones, 1)
@@ -252,6 +270,7 @@ class SAC(OffPolicyAgent):
         return td_errors.numpy()
 
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
+        """Compute batched temporal-difference errors using the target networks."""
         print("[DEBUG] initializing {_compute_td_error_body}...")
         with tf.device(self.device):
             masks = 1. - tf.reshape(tf.cast(dones, tf.float32), (-1,))
@@ -262,6 +281,7 @@ class SAC(OffPolicyAgent):
             return tf.stop_gradient(target) - self.qf1(states, actions, training=False)
 
     def get_logp(self, state):
+        """Return policy log probabilities for the supplied states and actions."""
         assert isinstance(state, np.ndarray)
         is_single_state = len(state.shape) == self.state_ndim
 
@@ -274,11 +294,13 @@ class SAC(OffPolicyAgent):
         return logp.numpy()[0] if is_single_state else logp.numpy()
 
     def _get_logp_body(self, state):
+        """Evaluate action log probabilities on the configured TensorFlow device."""
         with tf.device(self.device):
             logp = self.actor(state, training=False)[1]
         return logp
 
     def _init_static_graph(self, state_shape, action_dim):
+        """Set up TensorFlow signatures and traced model, training, or inference computations."""
         if self._is_pixels:
             state_spec = tuple([None]+list(state_shape))
             state_dtype = tf.uint8
@@ -316,6 +338,7 @@ class SAC(OffPolicyAgent):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = OffPolicyAgent.get_argument(parser)
         parser.add_argument('--lr', type=float, default=3e-4, help=" <default: %(default)s>")
         parser.add_argument('--lr-alpha', type=float, default=3e-4, help=" <default: %(default)s>")

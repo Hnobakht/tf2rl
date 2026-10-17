@@ -13,7 +13,9 @@ from tf2rl.algos.gail import Discriminator
 
 class StateActionModel(Discriminator):
 
+    """AIRL reward model over concatenated state-action inputs."""
     def compute_reward(self, inputs):
+        """Reject this reward conversion because it is undefined for this AIRL model."""
         raise NotImplementedError("compute_reward of airl_eql_rev is not implemented!")
         # print("[DEBUG] initializing {compute_reward StateActionModel}")
         # if not self._enable_sn:
@@ -24,9 +26,11 @@ class StateActionModel(Discriminator):
             # return self(inputs, training=False)
 
 class StateModel(tf.keras.Model):
+    """Dense scalar model over states for AIRL rewards or shaping potentials."""
     def __init__(self, state_shape, units=[32, 32],
                  enable_sn=False, output_activation="sigmoid",
                  name="StateModel"):
+        """Build a dense scalar state model with optional spectral normalization."""
         super().__init__(name=name)
         self._enable_sn = enable_sn
 
@@ -47,6 +51,7 @@ class StateModel(tf.keras.Model):
             self(dummy_state)
 
     def call(self, inputs, training=None):
+        """Return scalar AIRL model outputs for the supplied input batch."""
         if training == None:
             training = True
 
@@ -60,11 +65,13 @@ class StateModel(tf.keras.Model):
             return self.l3(features, training=training)
 
 class StateModel_EQL(tf.keras.Model):
+    """Equation reward model over state observations."""
     def __init__(self, state_shape, num_layers=2, drop_out = None,
                  enable_sn=False, output_activation=None, lmbda=0,
                  name="Discriminator", v=None, exclude=None, atol=0, constraint=None,
                  w_initializer='random_normal', b_initializer='random_normal',
                  is_lmbda_dynamic = False):
+        """Configure the state-only equation reward model and its regularized output."""
         super().__init__(name=name)
         self.num_layers = num_layers
         self.w_initializer = initializers.get(w_initializer)
@@ -126,6 +133,7 @@ class StateModel_EQL(tf.keras.Model):
                   .format(input_tf.shape, self(input_tf, training=False).shape, self.name))
 
     def call(self, inputs, training=None, l1_regularizers = 0):
+        """Return scalar AIRL model outputs for the supplied input batch."""
         print("[DEBUG] initializing [call Discriminator_EQL shapes: {} name: {}".format(inputs.shape, self.name))
 
         if training is None:
@@ -143,9 +151,11 @@ class StateModel_EQL(tf.keras.Model):
         return self.layer_out(features, training=training, l1_regularizers=l1_regularizers)
 
     def compute_reward(self, inputs):
+        """Reject this reward conversion because it is undefined for this AIRL model."""
         raise NotImplementedError("compute_reward of airl_eql_rev is not implemented!")
 
 class AIRL_EQL_REV(IRLPolicy):
+    """Legacy reversed AIRL experiment with an equation shaping model."""
     requires_log_probs = True
     def __init__(
             self,
@@ -170,6 +180,7 @@ class AIRL_EQL_REV(IRLPolicy):
             tau=None,
             exclude=None,
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         super().__init__(name=name, n_training=1, **kwargs)
         self._state_only = is_state_only
         self._is_debug = is_debug
@@ -211,6 +222,9 @@ class AIRL_EQL_REV(IRLPolicy):
     def train(self, agent_states, agent_acts, agent_next_states, agent_logps,
               expert_states, expert_acts, expert_next_states, expert_logps, itr):
 
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         if itr % self.update_delay == 0:
             loss, rewf, valf = self._train_body(
                 agent_states, agent_acts, agent_next_states, agent_logps,
@@ -227,6 +241,9 @@ class AIRL_EQL_REV(IRLPolicy):
     @tf.function
     def _train_body(self, agent_states, agent_acts, agent_next_states, agent_logps,
                     expert_states, expert_acts, expert_next_states, expert_logps):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         print("[DEBUG] initializing {_train_body AIRL_EQL}.")
         with tf.device(self.device):
             with tf.GradientTape() as tape:  # persistent=True
@@ -258,6 +275,9 @@ class AIRL_EQL_REV(IRLPolicy):
         return loss, tf.reduce_mean(fake_rews), tf.reduce_mean(fake_vals)
 
     def inference(self, states, actions, next_states, logps=None, **kwargs):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         if states.ndim == actions.ndim == 1:
             states = np.expand_dims(states, axis=0)
             actions = np.expand_dims(actions, axis=0)
@@ -270,6 +290,9 @@ class AIRL_EQL_REV(IRLPolicy):
 
     @tf.function
     def _inference_body(self, states, actions):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         print("[DEBUG] initializing {_inference_body AIRL}.")
         with tf.device(self.device):
             if self._state_only:
@@ -279,6 +302,7 @@ class AIRL_EQL_REV(IRLPolicy):
 
     @tf.function
     def _inference_body_disc(self, states, actions, next_states, logps):
+        """Return AIRL discriminator logits including potential shaping and policy log density."""
         print("[DEBUG] initializing {_inference_body AIRL}.")
         with tf.device(self.device):
             if self._state_only:
@@ -293,6 +317,7 @@ class AIRL_EQL_REV(IRLPolicy):
                        # logps
 
     def inference_bellman(self, states, actions, next_states, logps, **kwargs):
+        """Raise NotImplementedError for the unsupported experimental Bellman reward."""
         raise NotImplementedError
         if states.ndim == actions.ndim == 1:
             states = np.expand_dims(states, axis=0)
@@ -305,6 +330,7 @@ class AIRL_EQL_REV(IRLPolicy):
 
     @tf.function
     def _inference_bellman_body(self, states, actions, next_states, logps):
+        """Compute the experimental Bellman-style AIRL reward from batched transitions."""
         print("[DEBUG] initializing {_inference_bellman_body AIRL}.")
         with tf.device(self.device):
             if self._state_only:
@@ -318,6 +344,7 @@ class AIRL_EQL_REV(IRLPolicy):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = IRLPolicy.get_argument(parser)
         # over riding --units-ail to be [64,64]
         parser.add_argument('--units-ail', type=str, default="64,64",

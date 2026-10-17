@@ -15,6 +15,7 @@ from tf2rl.misc.initialize_logger import initialize_logger
 
 
 def import_tf():
+    """Import TensorFlow and enable GPU memory growth when GPUs are available."""
     import tensorflow as tf
     if tf.config.experimental.list_physical_devices('GPU'):
         for cur_device in tf.config.experimental.list_physical_devices("GPU"):
@@ -337,6 +338,7 @@ def evaluator(is_training_done, env, policy_fn, set_weights_fn, queue, gpu,
 
 
 def apex_argument(parser=None):
+    """Add distributed Ape-X training options and return the argument parser."""
     if parser is None:
         parser = argparse.ArgumentParser(conflict_handler='resolve')
     parser.add_argument('--n-training', type=int, default=1e7,
@@ -372,6 +374,7 @@ def apex_argument(parser=None):
 
 def prepare_experiment(env, args):
     # Manager to share PER between a learner and explorers
+    """Create shared replay storage, queues, locks, and counters for Ape-X workers."""
     SyncManager.register('PrioritizedReplayBuffer',
                          PrioritizedReplayBuffer)
     manager = SyncManager()
@@ -399,6 +402,7 @@ def prepare_experiment(env, args):
 
 
 def run(args, env_fn, policy_fn, get_weights_fn, set_weights_fn):
+    """Launch distributed Ape-X learner, explorer, and evaluator processes."""
     initialize_logger(
         logging_level=logging.getLevelName(args.logging_level))
 

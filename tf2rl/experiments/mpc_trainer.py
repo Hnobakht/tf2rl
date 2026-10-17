@@ -8,7 +8,9 @@ from tf2rl.misc.get_replay_buffer import get_space_size
 
 
 class DynamicsModel(tf.keras.Model):
+    """Neural model predicting environment dynamics from state-action pairs."""
     def __init__(self, input_dim, output_dim, units=[32, 32], name="DymamicsModel", gpu=0):
+        """Build a state-action prediction network on the selected TensorFlow device."""
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
         super().__init__(name=name)
 
@@ -21,11 +23,13 @@ class DynamicsModel(tf.keras.Model):
 
     @tf.function
     def call(self, inputs):
+        """Predict dynamics outputs for the supplied state-action batch."""
         features = self.l1(inputs)
         features = self.l2(features)
         return self.l3(features)
 
     def predict(self, inputs):
+        """Predict the dynamics model output for a batch of state-action inputs."""
         assert isinstance(inputs, np.ndarray)
         if inputs.ndim == 1:
             inputs = np.expand_dims(inputs, axis=0)
@@ -40,18 +44,22 @@ class DynamicsModel(tf.keras.Model):
 
 
 class RandomPolicy:
+    """Sample independent continuous actions uniformly within a symmetric bound."""
     def __init__(self, max_action, act_dim):
+        """Store the continuous action bound and number of action coordinates."""
         self._max_action = max_action
         self._act_dim = act_dim
         self.policy_name = "RandomPolicy"
 
     def get_action(self, obs):
+        """Sample one continuous action uniformly between minus and plus max_action."""
         return np.random.uniform(
             low=-self._max_action,
             high=self._max_action,
             size=self._act_dim)
 
     def get_actions(self, obses):
+        """Sample one bounded continuous action vector per observation in the batch."""
         batch_size = obses.shape[0]
         return np.random.uniform(
             low=-self._max_action,
@@ -60,6 +68,7 @@ class RandomPolicy:
 
 
 class MPCTrainer(Trainer):
+    """Train dynamics models and collect data using sampled model-predictive control."""
     def __init__(
             self,
             policy,
@@ -70,6 +79,7 @@ class MPCTrainer(Trainer):
             n_dynamics_model=1,
             lr=0.001,
             **kwargs):
+        """Configure training, replay storage, evaluation, and checkpoint handling."""
         super().__init__(policy, env, args, **kwargs)
 
         self.dynamics_buffer = ReplayBuffer(**self._prepare_dynamics_buffer_dict(buffer_size=buffer_size))
@@ -81,6 +91,7 @@ class MPCTrainer(Trainer):
 
     def _prepare_dynamics_buffer_dict(self, buffer_size):
         # Prepare buffer that stores transitions (s, a, s')
+        """Define the replay fields used to train the dynamics models."""
         rb_dict = {
             "size": buffer_size,
             "default_dtype": np.float32,
@@ -92,6 +103,7 @@ class MPCTrainer(Trainer):
 
     def _prepare_dynamics_model(self, gpu=0, lr=0.001):
         # Dynamics model
+        """Create the dynamics models and their optimizers."""
         obs_dim = self._env.observation_space.high.size
         act_dim = self._env.action_space.high.size
         self._dynamics_models = [
@@ -104,10 +116,12 @@ class MPCTrainer(Trainer):
 
     def _set_check_point(self, model_dir):
         # Save and restore model
+        """Create the TensorFlow checkpoint manager and restore a checkpoint when requested."""
         if isinstance(self._policy, tf.keras.Model):
             super()._set_check_point(model_dir)
 
     def __call__(self):
+        """Run the training loop, including data collection, policy updates, and evaluation."""
         total_steps = 0
         tf.summary.experimental.set_step(total_steps)
         # Gather dataset of random trajectories
@@ -138,6 +152,7 @@ class MPCTrainer(Trainer):
             self.logger.info("iter={0: 3d} total_rew: {1:4.4f} loss: {2:2.8f}".format(i, total_rew, mean_loss))
 
     def predict_next_state(self, obses, acts):
+        """Predict successor states from observations and actions using the learned dynamics."""
         obs_diffs = np.zeros_like(obses)
         inputs = np.concatenate([obses, acts], axis=1)
         for dynamics_model in self._dynamics_models:
@@ -146,6 +161,7 @@ class MPCTrainer(Trainer):
         return obses + obs_diffs
 
     def _mpc(self, obs):
+        """Choose the first action of the sampled sequence with the best predicted return."""
         obses = np.tile(obs, (self._n_sample, 1))
         init_actions = self._policy.get_actions(obses)
         total_rewards = np.zeros(shape=(self._n_sample,))
@@ -166,6 +182,7 @@ class MPCTrainer(Trainer):
         return init_actions[idx]
 
     def _set_from_args(self, args):
+        """Copy trainer settings from the parsed command-line arguments."""
         super()._set_from_args(args)
         self._max_iter = args.max_iter
         self._horizon = args.horizon
@@ -174,6 +191,7 @@ class MPCTrainer(Trainer):
         self._batch_size = args.batch_size
 
     def collect_episodes(self, n_rollout=1):
+        """Collect real-environment episodes for dynamics learning."""
         for _ in range(n_rollout):
             obs = self._env.reset()
             for _ in range(self._episode_max_steps):
@@ -187,6 +205,7 @@ class MPCTrainer(Trainer):
 
     @tf.function
     def _fit_dynamics_body(self, inputs, labels):
+        """Update each dynamics model once and return the ensemble loss vector."""
         losses = []
         for dynamics_model, optimizer in zip(self._dynamics_models, self._optimizers):
             with tf.GradientTape() as tape:
@@ -200,6 +219,7 @@ class MPCTrainer(Trainer):
         return tf.convert_to_tensor(losses)
 
     def _make_inputs_output_pairs(self, n_epoch):
+        """Create dynamics inputs and state-difference targets from replay samples."""
         samples = self.dynamics_buffer.sample(self.dynamics_buffer.get_stored_size())
         inputs = np.concatenate([samples["obs"], samples["act"]], axis=1)
         labels = samples["next_obs"] - samples["obs"]
@@ -207,6 +227,7 @@ class MPCTrainer(Trainer):
         return inputs, labels
 
     def fit_dynamics(self, n_epoch=1):
+        """Train the dynamics ensemble on transitions from the replay buffer."""
         inputs, labels = self._make_inputs_output_pairs(n_epoch)
 
         dataset = tf.data.Dataset.from_tensor_slices((inputs, labels))
@@ -226,6 +247,7 @@ class MPCTrainer(Trainer):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = Trainer.get_argument(parser)
         parser.add_argument('--gpu', type=int, default=0,
                             help='GPU id')

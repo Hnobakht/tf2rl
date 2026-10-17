@@ -6,12 +6,14 @@ from tf2rl.algos.policy_base import IRLPolicy
 
 
 class Discriminator(tf.keras.Model):
+    """Distinguish expert and agent state transitions, optionally through a latent bottleneck."""
     LOG_SIG_CAP_MAX = 2  # np.e**2 = 7.389
     LOG_SIG_CAP_MIN = -20  # np.e**-10 = 4.540e-05
     EPS = 1e-6
 
     def __init__(self, state_shape, action_dim, units=(32, 32), decoder_units = (1,),
                  n_latent_unit=32, enable_sn=False, name="Discriminator", w_ini = 'orthogonal'):
+        """Build the expert-versus-agent discriminator with the requested architecture."""
         super().__init__(name=name)
         self._encoder_list = []
         self._decoder_list = []
@@ -29,6 +31,7 @@ class Discriminator(tf.keras.Model):
             raise NotImplementedError
 
     def _encoder_model(self, units, activation):
+        """Build the encoder that predicts latent Gaussian parameters."""
         index=0
         for unit in units:
             self._encoder_list.append(Dense(unit, name="L_EN"+str(index),
@@ -37,6 +40,7 @@ class Discriminator(tf.keras.Model):
             index += 1
 
     def _decoder_model(self, units, activation, output_activation, output_shape):
+        """Build the discriminator network that maps latent samples to outputs."""
         if  not units[0] == 1:
             index = 0
             for unit in units:
@@ -55,6 +59,9 @@ class Discriminator(tf.keras.Model):
 
     def call(self, inputs, training):
 
+        """Encode inputs, sample latent features, and return discriminator outputs and latent
+        statistics.
+        """
         features = inputs
         for layer in self._encoder_list:
             features = layer(features)
@@ -80,11 +87,13 @@ class Discriminator(tf.keras.Model):
 
     @tf.function
     def compute_reward(self, inputs):
+        """Return stabilized discriminator log odds for each input sample."""
         print("[DEBUG] initializing {compute_reward GAIfO}")
         return tf.math.log(self(inputs) + 1e-8) - \
                tf.math.log(1 - self(inputs) + 1e-8)
 
 class GAIfO_VAE(IRLPolicy):
+    """Observation-only adversarial imitation with a variational discriminator."""
     def __init__(
             self,
             state_shape,
@@ -94,6 +103,7 @@ class GAIfO_VAE(IRLPolicy):
             dropout_rate=0.,
             name="GAIfO",
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         super().__init__(name=name, n_training=1, **kwargs)
 
         self.disc = Discriminator(state_shape=state_shape, units=units, enable_sn=enable_sn, dropout_rate=dropout_rate)
@@ -102,6 +112,9 @@ class GAIfO_VAE(IRLPolicy):
 
     def train(self, agent_states, agent_next_states,
               expert_states, expert_next_states, **kwargs):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         loss, accuracy, js_divergence = self._train_body(agent_states,
                                                          agent_next_states,
                                                          expert_states,
@@ -113,12 +126,16 @@ class GAIfO_VAE(IRLPolicy):
 
     @tf.function
     def _compute_js_divergence(self, fake_logits, real_logits):
+        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs."""
         m = (fake_logits + real_logits) / 2.
         return tf.reduce_mean((
             fake_logits * tf.math.log(fake_logits / m + 1e-8) + real_logits * tf.math.log(real_logits / m + 1e-8)) / 2.)
 
     @tf.function
     def _train_body(self, agent_states, agent_next_states, expert_states, expert_next_states):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         epsilon = 1e-8
         with tf.device(self.device):
             with tf.GradientTape() as tape:
@@ -137,6 +154,9 @@ class GAIfO_VAE(IRLPolicy):
         return loss, accuracy, js_divergence
 
     def inference(self, states, actions, next_states):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         assert states.shape == next_states.shape
         if states.ndim == 1:
             states = np.expand_dims(states, axis=0)
@@ -146,11 +166,15 @@ class GAIfO_VAE(IRLPolicy):
 
     @tf.function
     def _inference_body(self, inputs):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         print("[DEBUG] initializing {_inference_body GAIfO}...")
         with tf.device(self.device):
             return self.disc.compute_reward(inputs)
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = IRLPolicy.get_argument(parser)
         return parser

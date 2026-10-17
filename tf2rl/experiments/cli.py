@@ -20,10 +20,12 @@ from tf2rl.experiments.trainer import Trainer
 
 
 def _csv(value, cast):
+    """Parse comma-separated values using the requested conversion function."""
     return [cast(item.strip()) for item in value.split(',')]
 
 
 def main(argv=None, algorithm=None):
+    """Parse experiment options and launch imitation training or expert collection."""
     parser = equation_arguments(AIRL.get_argument(SAC_IRL.get_argument(IRLTrainer.get_argument())))
     parser.add_argument('--algorithm', choices=('airl', 'gail', 'eqn-airl', 'eqn-gail', 'sac'),
                         default=algorithm or 'eqn-airl')

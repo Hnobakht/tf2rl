@@ -5,6 +5,7 @@ from tf2rl.algos.vpg import VPG
 
 
 class PPO(VPG):
+    """Proximal policy optimization with clipped likelihood-ratio updates."""
     def __init__(
             self,
             clip=True,
@@ -12,6 +13,7 @@ class PPO(VPG):
             name="PPO",
             target_kl=0.075,
             **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(name=name, **kwargs)
         self.clip = clip
         self.clip_ratio = clip_ratio
@@ -20,6 +22,7 @@ class PPO(VPG):
 
     def train(self, states, actions, advantages, logp_olds, returns):
         # Train actor and critic
+        """Update the PPO policy and value function from a rollout batch."""
         if self.actor_critic is not None:
             raise NotImplemented
             actor_loss, critic_loss, logp_news, ratio, ent, kl = self._train_actor_critic_body(
@@ -53,6 +56,8 @@ class PPO(VPG):
 
     def train_actor(self, states, actions, advantages, logp_olds, returns):
         # Train actor and critic
+        """Update the PPO policy from observations, actions, advantages, and old log probabilities.
+        """
         if self.actor_critic is not None:
             raise NotImplemented
         else:
@@ -81,6 +86,7 @@ class PPO(VPG):
 
     def train_critic(self, states, returns):
         # Train actor and critic
+        """Update the value function against the supplied return targets."""
         if self.actor_critic is not None:
             raise NotImplemented
         else:
@@ -91,6 +97,7 @@ class PPO(VPG):
 
     @tf.function
     def _train_actor_critic_body(self, states, actions, advantages, logp_olds, returns):
+        """Update the shared actor-critic model using PPO losses."""
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 _, _, current_V = self.actor_critic(states)
@@ -129,6 +136,7 @@ class PPO(VPG):
 
     @tf.function
     def _train_actor_body(self, states, actions, advantages, logp_olds):
+        """Apply one policy-gradient update and return the optimization diagnostics."""
         with tf.device(self.device):
             # Update actor
             with tf.GradientTape() as tape:

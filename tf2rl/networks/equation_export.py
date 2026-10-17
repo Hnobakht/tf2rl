@@ -82,12 +82,15 @@ _EVALUATOR_SOURCE = inspect.getsource(evaluate_equation)
 
 
 class _Graph:
+    """Build a deduplicated inference graph with constant folding and unreachable-node removal."""
     def __init__(self, inputs):
+        """Initialize named inputs, graph nodes, and the deduplication cache."""
         self.inputs = inputs
         self.nodes = []
         self.cache = {}
 
     def add(self, op, args=(), **attributes):
+        """Return a deduplicated graph-node index, folding constant-only operations."""
         node = dict(op=op, **attributes)
         if args:
             node['args'] = list(args)
@@ -103,9 +106,13 @@ class _Graph:
         return self.cache[key]
 
     def constant(self, value):
+        """Return a deduplicated constant node using float32 precision."""
         return self.add('constant', value=float(np.float32(value)))
 
     def affine(self, inputs, weights, bias):
+        """
+        Add an affine expression, omitting zero weights and simplifying constant or identity terms.
+        """
         selected = [(node, float(weight)) for node, weight in zip(inputs, weights) if weight != 0]
         if not selected:
             return self.constant(bias)
@@ -115,9 +122,11 @@ class _Graph:
         return self.add('affine', args, weights=weights, bias=float(bias))
 
     def finish(self, outputs, metadata):
+        """Return an export graph containing only nodes reachable from the named outputs."""
         reachable = set()
 
         def visit(index):
+            """Mark a graph node and its dependencies as reachable."""
             if index not in reachable:
                 reachable.add(index)
                 for parent in self.nodes[index].get('args', []):

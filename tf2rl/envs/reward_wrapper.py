@@ -11,7 +11,9 @@ from tf2rl.algos.gaifo_eql import Discriminator_EQL as State_only_discriminator_
 
 
 class WeightAtolApply(gym.Wrapper):
+    """Suppress small restored reward-network weights using an absolute or relative threshold."""
     def __init__(self, env, atol=0.01, drop = None, is_show = False, is_figure = False):
+        """Suppress restored reward weights using exactly one of atol or relative drop."""
         if atol is None and drop is None:
             raise AttributeError("atol and drop cant be both NONE value")
         elif atol is not None and drop is not None:
@@ -38,15 +40,19 @@ class WeightAtolApply(gym.Wrapper):
         self.env.disc.set_weights(weights)
 
     def step(self, action, state=None):
+        """Forward the action and optional previous state to the wrapped reward environment."""
         return self.env.step(action, state)
 
     @property
     def _max_episode_steps(self):
+        """Return the wrapped environment's episode time limit."""
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 
 class GailExternalReward(gym.Wrapper):
+    """Legacy environment wrapper using rewards from a saved GAIL discriminator."""
     def __init__(self, env, path, units, gpu=0, enable_sn=False, dac_reward = False):
+        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
         super().__init__(env)
         self.env = env
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
@@ -61,6 +67,7 @@ class GailExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
+        """Step the legacy environment using the previous state to compute a learned reward."""
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [GailExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -75,17 +82,23 @@ class GailExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
+        """
+        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """
         print("[DEBUG] Initializing _step_body [GailEQLExternalReward]")
         with tf.device(self.device):
             return self.disc.compute_reward(inputs)
 
     @property
     def _max_episode_steps(self):
+        """Return the wrapped environment's episode time limit."""
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 
 class GailEQLExternalReward(gym.Wrapper):
+    """Legacy environment wrapper using rewards from a saved EQN-GAIL discriminator."""
     def __init__(self, env, path, num_layers, v, exclude, gpu=0, enable_sn=False, dac_reward = False):
+        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
         super().__init__(env)
         self.env = env
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
@@ -108,6 +121,7 @@ class GailEQLExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
+        """Step the legacy environment using the previous state to compute a learned reward."""
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [GailEQLExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -122,16 +136,22 @@ class GailEQLExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
+        """
+        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """
         print("[DEBUG] Initializing _step_body [GailEQLExternalReward]")
         with tf.device(self.device):
             return -self.disc.compute_reward(inputs)
 
     @property
     def _max_episode_steps(self):
+        """Return the wrapped environment's episode time limit."""
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 class AirlEQLExternalReward(gym.Wrapper):
+    """Legacy environment wrapper using rewards from a saved EQN-AIRL model."""
     def __init__(self, env, path, num_layers, v, exclude, units, state_only = False, gpu=0, enable_sn=False, dac_reward = False):
+        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
         super().__init__(env)
         self.env = env
         self._is_state_only = state_only
@@ -172,6 +192,7 @@ class AirlEQLExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
+        """Step the legacy environment using the previous state to compute a learned reward."""
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [AirlEQLExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -191,17 +212,23 @@ class AirlEQLExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
+        """
+        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """
         print("[DEBUG] Initializing _step_body [AirlEQLExternalReward]")
         with tf.device(self.device):
             return -self.disc(inputs, training=False)
 
     @property
     def _max_episode_steps(self):
+        """Return the wrapped environment's episode time limit."""
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 
 class AirlExternalReward(gym.Wrapper):
+    """Legacy environment wrapper using rewards from a saved AIRL model."""
     def __init__(self, env, path, units, gpu=0, state_only = False, enable_sn=False, dac_reward = False):
+        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
         super().__init__(env)
         self.env = env
         self._is_state_only = state_only
@@ -232,6 +259,7 @@ class AirlExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
+        """Step the legacy environment using the previous state to compute a learned reward."""
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [AirlExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -251,16 +279,22 @@ class AirlExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
+        """
+        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """
         print("[DEBUG] Initializing _step_body [AirlExternalReward]")
         with tf.device(self.device):
             return self.disc(inputs, training=False)
 
     @property
     def _max_episode_steps(self):
+        """Return the wrapped environment's episode time limit."""
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 class GaifoExternalReward(gym.Wrapper):
+    """Legacy environment wrapper using a saved observation-transition discriminator."""
     def __init__(self, env, path, units, gpu=0, enable_sn=False, dac_reward = False):
+        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
         super().__init__(env)
         self.env = env
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
@@ -274,6 +308,7 @@ class GaifoExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
+        """Step the legacy environment using the previous state to compute a learned reward."""
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [GaifoExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -289,17 +324,23 @@ class GaifoExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
+        """
+        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """
         print("[DEBUG] Initializing _step_body [GaifoExternalReward]")
         with tf.device(self.device):
             return self.disc.compute_reward(inputs)
 
     @property
     def _max_episode_steps(self):
+        """Return the wrapped environment's episode time limit."""
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 
 class GaifoEQLExternalReward(gym.Wrapper):
+    """Legacy environment wrapper using a saved equation transition discriminator."""
     def __init__(self, env, path, num_layers, v, exclude, gpu=0, enable_sn=False, dac_reward = False):
+        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
         super().__init__(env)
         self.env = env
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
@@ -321,6 +362,7 @@ class GaifoEQLExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
+        """Step the legacy environment using the previous state to compute a learned reward."""
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [GaifoEQLExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -336,10 +378,14 @@ class GaifoEQLExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
+        """
+        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """
         print("[DEBUG] Initializing _step_body [GaifoEQLExternalReward]")
         with tf.device(self.device):
             return self.disc.compute_reward(inputs)
 
     @property
     def _max_episode_steps(self):
+        """Return the wrapped environment's episode time limit."""
         return self.env._max_episode_steps  # pylint: disable=protected-access

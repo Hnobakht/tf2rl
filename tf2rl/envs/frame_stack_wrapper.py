@@ -7,6 +7,7 @@ import numpy as np
 class FrameStack(gym.Wrapper):
     """Concatenate pixel channels, retaining the research model's input ordering."""
     def __init__(self, env, k, obs_shape=None, channel_first=False):
+        """Configure the frame history length and stacked observation space."""
         super().__init__(env)
         if k < 1:
             raise ValueError("k must be positive")
@@ -20,15 +21,18 @@ class FrameStack(gym.Wrapper):
             dtype=env.observation_space.dtype)
 
     def reset(self, **kwargs):
+        """Reset the environment and fill the history with copies of the initial frame."""
         obs, info = self.env.reset(**kwargs)
         self._frames.clear()
         self._frames.extend([obs] * self._k)
         return self._get_obs(), info
 
     def step(self, action):
+        """Step the environment and append the new frame to the observation history."""
         obs, reward, terminated, truncated, info = self.env.step(action)
         self._frames.append(obs)
         return self._get_obs(), reward, terminated, truncated, info
 
     def _get_obs(self):
+        """Concatenate the current frame history along the configured channel axis."""
         return np.concatenate(list(self._frames), axis=self._axis)

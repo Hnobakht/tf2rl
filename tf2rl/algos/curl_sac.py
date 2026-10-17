@@ -14,6 +14,7 @@ OUT_DIM_64 = {2: 29, 4: 25, 6: 21}
 
 
 class Encoder(tf.keras.Model):
+    """Convolutional encoder for CURL image representations."""
     def __init__(self,
                  obs_shape=(84, 84, 9),
                  feature_dim=50,
@@ -21,6 +22,7 @@ class Encoder(tf.keras.Model):
                  n_conv_filters=32,
                  name="curl_encoder",
                  output_logits=True):
+        """Build the convolutional image encoder and configure the latent feature dimension."""
         super().__init__(name=name)
 
         assert len(obs_shape) == 3
@@ -44,6 +46,7 @@ class Encoder(tf.keras.Model):
             self(tf.constant(dummy_obs))
 
     def call(self, inputs):
+        """Normalize byte images and return their convolutional latent features."""
         features = tf.divide(tf.cast(inputs, tf.float32),
                              tf.constant(255.))
 
@@ -57,6 +60,7 @@ class Encoder(tf.keras.Model):
 
 
 class CURLSAC(SAC):
+    """SAC with contrastive representation learning from cropped image observations."""
     def __init__(self,
                  action_dim,
                  obs_shape=(84, 84, 9),
@@ -67,6 +71,7 @@ class CURLSAC(SAC):
                  lr_sac=1e-3,
                  lr_alpha=1e-4,
                  **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(state_shape=(feature_dim,),
                          action_dim=action_dim,
                          name="CURLSAC",
@@ -91,6 +96,9 @@ class CURLSAC(SAC):
         self.state_ndim = 3
 
     def train(self, states, actions, next_states, rewards, dones, weights=None):
+        """
+        Update the actor and critics from a replay minibatch and return temporal-difference errors.
+        """
         if weights is None:
             weights = np.ones_like(rewards)
 
@@ -120,16 +128,20 @@ class CURLSAC(SAC):
         return td_errors
 
     def get_action(self, state, test=False):
+        """Select an action for one observation or a batch; test mode disables exploration."""
         state = center_crop(state, self._input_img_size)
         return super().get_action(state, test)
 
     @tf.function
     def _get_action_body(self, state, test):
+        """Compute policy actions for a batch on the configured TensorFlow device."""
         encoded_state = self._encoder(state)
         actions, log_pis = self.actor(encoded_state, test)
         return actions
 
     def _train_body(self, obses_anchor, obses_negative, actions, next_obses_anchor, rewards, dones, weights):
+        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """
         with tf.device(self.device):
             assert len(dones.shape) == 2
             assert len(rewards.shape) == 2

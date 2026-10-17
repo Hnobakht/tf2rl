@@ -6,6 +6,7 @@ from tf2rl.experiments.demonstrations import (
 
 
 def frames_to_gif(frames, prefix, save_dir, interval=50, fps=30):
+    """Save a sequence of image frames as an animated GIF."""
     from pathlib import Path
     from PIL import Image
     if not frames:

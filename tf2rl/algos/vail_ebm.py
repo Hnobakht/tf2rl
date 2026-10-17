@@ -7,12 +7,14 @@ from tf2rl.algos.vail import VAIL
 
 
 class Discriminator(tf.keras.Model):
+    """Variational discriminator with an encoded Gaussian information bottleneck."""
     LOG_SIG_CAP_MAX = 2  # np.e**2 = 7.389
     LOG_SIG_CAP_MIN = -20  # np.e**-10 = 4.540e-05
     EPS = 1e-6
 
     def __init__(self, state_shape, action_dim, units=(32, 32), decoder_units = (1,),
                  n_latent_unit=32, enable_sn=False, name="Discriminator", w_ini = 'orthogonal'):
+        """Build the expert-versus-agent discriminator with the requested architecture."""
         super().__init__(name=name)
         self._encoder_list = []
         self._decoder_list = []
@@ -33,6 +35,7 @@ class Discriminator(tf.keras.Model):
         # with tf.device("/cpu:0"):
         self(dummy_state, tf.constant(True))
     def _encoder_model(self, units, activation):
+        """Build the encoder that predicts latent Gaussian parameters."""
         index=0
         for unit in units:
             self._encoder_list.append(Dense(unit, name="L_EN"+str(index),
@@ -41,6 +44,7 @@ class Discriminator(tf.keras.Model):
             index += 1
 
     def _decoder_model(self, units, activation, output_activation):
+        """Build the discriminator network that maps latent samples to outputs."""
         if  not units[0] == 1:
             index = 0
             for unit in units:
@@ -59,6 +63,9 @@ class Discriminator(tf.keras.Model):
 
 
     def call(self, inputs, training):
+        """Encode inputs, sample latent features, and return discriminator outputs and latent
+        statistics.
+        """
         features = inputs
 
         for layer in self._encoder_list:
@@ -82,7 +89,9 @@ class Discriminator(tf.keras.Model):
         return latents, means, logstds
 
 class InputModel(tf.keras.Model):
+    """Feature model used by the variational energy-based discriminator."""
     def __init__(self, state_shape, action_dim, units, activation='relu', name="InputModel", w_ini='orthogonal', trainable=True):
+        """Build the feature layers feeding the variational energy-based discriminator."""
         super().__init__(name=name)
         self.layer_1 = Dense(units, name="L1_"+str(name),
                              activation=activation if trainable else 'sigmoid',
@@ -103,6 +112,7 @@ class InputModel(tf.keras.Model):
         self((dummy_state, dummy_action))
 
     def call(self, inputs):
+        """Transform inputs into features for the energy-based discriminator."""
         features = tf.concat(inputs, axis=1)
         print("[DEBUG] initializing InputModel {} [call {} Discriminator-VAIL_EBM]"
               .format(str(self.name) ,features.shape))
@@ -110,6 +120,7 @@ class InputModel(tf.keras.Model):
         return self.layer_2(features)
 
 class VAIL_EBM(VAIL):
+    """Experimental variational imitation learner with an energy-based discriminator."""
     def __init__(
             self,
             state_shape,
@@ -126,6 +137,7 @@ class VAIL_EBM(VAIL):
             name="VAIL_EBM",
             is_debug=False,
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         IRLPolicy.__init__(self, name=name, n_training=1, **kwargs)
         assert isinstance(decoder_units, tuple) and isinstance(units, tuple), \
             "[ERORR] the units should be tuple[__init__ VAIL_EBM]"
@@ -153,6 +165,9 @@ class VAIL_EBM(VAIL):
 
     def train(self, agent_states, agent_acts, expert_states, expert_acts, **kwargs):
         # with tf.device(self.device):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         agent_states, agent_acts, expert_states, expert_acts = \
             tuple([tf.constant(i) for i in (agent_states, agent_acts, expert_states, expert_acts)])
 
@@ -176,6 +191,9 @@ class VAIL_EBM(VAIL):
             [tf.summary.histogram(name=self.policy_name + "/agent, {}".format(i.shape), data=i) for i in self.agent_model.get_weights()]
 
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts, training):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         epsilon = 1e-8
         grad_out = None
         with tf.GradientTape() as tape, \
@@ -221,6 +239,9 @@ class VAIL_EBM(VAIL):
         return loss, accuracy, real_kl, fake_kl, js_divergence, loss_agent
 
     def _inference_body(self, states, actions, training):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         print("[DEBUG] initializing {_inference_body VAIL_EBM}")
         false_val = tf.constant(False)
         sig, _, _ = self.disc(self.agent_model((states, actions)), training=training)
@@ -228,6 +249,7 @@ class VAIL_EBM(VAIL):
         return out
 
     def _init_static_graph(self, state_shape, action_dim, n_latent_unit):
+        """Set up TensorFlow signatures and traced model, training, or inference computations."""
         print("[DEBUG] initializing {_init_static_graph VAIL_EBM}")
         # Compiling the static graphs
         assert len(state_shape) == 1, "[ERROR] This SAC only supports RAM env {_init_static_graph VAIL_EBM}"

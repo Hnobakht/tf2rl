@@ -7,8 +7,10 @@ import glfw
 import time
 
 class DmControlViewer(dm_viewer_app.Application):
+    """dm_control viewer exposing rendering and single-step control to the caller."""
     def render(self):
         # Don't try to render into closed windows
+        """Render the viewer and handle events, continuing to redraw while paused."""
         if not self._window._context:
             return
 
@@ -22,6 +24,7 @@ class DmControlViewer(dm_viewer_app.Application):
 
     def _render_once(self):
         # See https://github.com/deepmind/dm_control/blob/92f9913013face0468442cd0964d5973ea2089ea/dm_control/viewer/gui/glfw_gui.py#L280  # noqa: E501
+        """Render one viewer frame and process input events, closing the window if needed."""
         window = self._window
         tick_func = self._tick_func
         if (window._context
@@ -37,6 +40,8 @@ class DmControlViewer(dm_viewer_app.Application):
 
     def launch(self, environment_loader, policy=None):
         # See https://github.com/deepmind/dm_control/blob/92f9913013face0468442cd0964d5973ea2089ea/dm_control/viewer/application.py#L304  # noqa: E501
+        """Load the environment and optional policy, leaving the viewer ready for single stepping.
+        """
         if environment_loader is None:
             raise ValueError('"environment_loader" argument is required.')
         if callable(environment_loader):
@@ -47,6 +52,7 @@ class DmControlViewer(dm_viewer_app.Application):
         self._load_environment(zoom_to_scene=True)
 
         def tick():
+            """Advance the viewer and return the rendered pixels."""
             self._viewport.set_size(*self._window.shape)
             self._tick()
             return self._renderer.pixels
@@ -57,7 +63,9 @@ class DmControlViewer(dm_viewer_app.Application):
         self._pause_subject.value = False
 
     def close(self):
+        """Close the viewer window."""
         self._window.close()
 
     def restart(self):
+        """Restart the viewer runtime for the current environment."""
         self._restart_runtime()

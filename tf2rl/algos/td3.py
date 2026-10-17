@@ -7,7 +7,9 @@ from tf2rl.algos.policy_base import OffPolicyAgent
 from tf2rl.misc.target_update_ops import update_target_variables
 
 class Actor(tf.keras.Model):
+    """Deterministic policy mapping state vectors to bounded continuous actions."""
     def __init__(self, state_shape, action_dim, max_action, units=(400, 300), name="Actor"):
+        """Build the deterministic policy and set its continuous action bounds."""
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.TruncatedNormal(mean=0., stddev=2e-3)
@@ -21,6 +23,7 @@ class Actor(tf.keras.Model):
 
     @tf.function
     def call(self, inputs):
+        """Return bounded continuous actions for the input observation batch."""
         features = tf.nn.relu(self.l1(inputs))
         features = tf.nn.relu(self.l2(features))
         features = self.l3(features)
@@ -28,7 +31,9 @@ class Actor(tf.keras.Model):
         return action
 
 class Critic(tf.keras.Model):
+    """Action-value network for deterministic continuous-control agents."""
     def __init__(self, state_shape, action_dim, units=(400, 300), name="Critic"):
+        """Build the state-action value network and initialize its parameters."""
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.glorot_uniform()
@@ -43,6 +48,7 @@ class Critic(tf.keras.Model):
 
 
     def call(self, states, actions):
+        """Return the two Q-value estimates for each state-action pair."""
         xu = tf.concat((states, actions), axis=1)
 
         x1 = tf.nn.relu(self.l1(xu))
@@ -56,7 +62,9 @@ class Critic(tf.keras.Model):
         return tf.squeeze(x1, axis=1), tf.squeeze(x2, axis=1)
 
 class Actor_pixels(tf.keras.Model):
+    """Deterministic policy that extracts features from pixel observations."""
     def __init__(self, state_shape, action_dim, max_action, units=(400, 300), name="Actor"):
+        """Build the image encoder and deterministic action head."""
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.TruncatedNormal(mean=0., stddev=1e-4)
@@ -74,6 +82,7 @@ class Actor_pixels(tf.keras.Model):
 
     @tf.function
     def call(self, inputs):
+        """Return bounded continuous actions for the input observation batch."""
         print("[DEBUG] Input: " + str(inputs.shape) + " Dtype: " + str(inputs.dtype) + "[call Actor_pixels TD3]")
         features = tf.cast(inputs/255, dtype=tf.float32)
 
@@ -87,7 +96,9 @@ class Actor_pixels(tf.keras.Model):
         return action
 
 class Critic_pixels(tf.keras.Model):
+    """Twin action-value network using pixel observations and continuous actions."""
     def __init__(self, state_shape, action_dim, units=(400, 300), name="Critic"):
+        """Build convolutional state features and twin Q-value heads."""
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.glorot_uniform()
@@ -117,6 +128,7 @@ class Critic_pixels(tf.keras.Model):
 
     @tf.function
     def call(self, states, actions):
+        """Return the two Q-value estimates for each state-action pair."""
         print("[DEBUG] Input state: " + str(states.shape) + " Dtype: " + str(states.dtype) + "[call Critic_pixels TD3]")
         features_cnn = tf.cast(states/255, dtype=tf.float32)
 
@@ -141,6 +153,7 @@ class Critic_pixels(tf.keras.Model):
         return tf.squeeze(x1, axis=1), tf.squeeze(x2, axis=1)
 
 class TD3(DDPG):
+    """Twin delayed deterministic policy gradient with target-policy smoothing."""
     def __init__(
             self,
             state_shape,
@@ -160,6 +173,7 @@ class TD3(DDPG):
             noise_clip=0.5,
             is_pixels = False,
             **kwargs):
+        """Configure the agent's networks, optimizers, and training hyperparameters."""
         OffPolicyAgent.__init__(self,name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
 
         # Define and initialize Actor network
@@ -199,6 +213,7 @@ class TD3(DDPG):
         self.state_ndim = len(state_shape)
 
     def get_action(self, state, test=False, tensor=False):
+        """Select an action for one observation or a batch; test mode disables exploration."""
         is_single_state = len(state.shape) == self.state_ndim
 
         if not tensor:
@@ -218,6 +233,8 @@ class TD3(DDPG):
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones, weights):
+        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """
         print("[DEBUG] initializing {_train_body TD3}.")
         with tf.device(self.device):
             with tf.GradientTape() as tape:
@@ -237,12 +254,15 @@ class TD3(DDPG):
             remainder = tf.math.mod(self._it, self._actor_update_freq)
 
             def optimize_actor():
+                """Compute and apply the actor update for the current state batch."""
                 actor_grad = tape.gradient(actor_loss, self.actor.trainable_variables)
                 return self.actor_optimizer.apply_gradients(zip(actor_grad, self.actor.trainable_variables))
                 # Update target networks. Moved the updates to the delay routine.
             def update_critic():
+                """Soft-update the target critic parameters from the current critic."""
                 return update_target_variables(self.critic_target.weights, self.critic.weights, self.tau)
             def update_actor():
+                """Soft-update the target actor parameters from the current actor."""
                 return update_target_variables(self.actor_target.weights, self.actor.weights, self.tau)
 
             tf.cond(pred=tf.equal(remainder, 0), true_fn=optimize_actor, false_fn=tf.no_op)
@@ -257,12 +277,14 @@ class TD3(DDPG):
             return actor_loss, critic_loss, tf.abs(td_errors1) + tf.abs(td_errors2)
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
+        """Return temporal-difference errors for the supplied transition batch."""
         td_errors1, td_errors2 = self._compute_td_error_body(
             states, actions, next_states, rewards, dones)
         return np.squeeze(np.abs(td_errors1.numpy()) + np.abs(td_errors2.numpy()))
 
     @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
+        """Compute batched temporal-difference errors using the target networks."""
         print("[DEBUG] initializing {_compute_td_error_body TD3}.")
         assert len(dones.shape) == 2
         assert len(rewards.shape) == 2
@@ -290,6 +312,7 @@ class TD3(DDPG):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = DDPG.get_argument(parser)
 
         parser.add_argument('--actor-update-freq', type=int, default=2,

@@ -2,6 +2,7 @@ import tensorflow as tf
 
 
 class Policy(tf.keras.Model):
+    """Base policy interface and shared training configuration."""
     def __init__(
             self,
             name,
@@ -13,6 +14,7 @@ class Policy(tf.keras.Model):
             max_grad=10.,
             n_epoch=1,
             gpu=0):
+        """Store replay, update, discount, batch, and device settings shared by all policies."""
         super().__init__()
         self.policy_name = name
         self.update_interval = update_interval
@@ -25,10 +27,12 @@ class Policy(tf.keras.Model):
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
 
     def get_action(self, observation, test=False):
+        """Define action selection for subclasses; the base implementation is abstract."""
         raise NotImplementedError
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         import argparse
         if parser is None:
             parser = argparse.ArgumentParser(conflict_handler='resolve')
@@ -57,6 +61,7 @@ class OnPolicyAgent(Policy):
             entropy_coef=0.01,
             vfunc_coef=1.,
             **kwargs):
+        """Configure rollout length, advantage estimation, and policy/value loss coefficients."""
         self.horizon = horizon
         self.lam = lam
         self.enable_gae = enable_gae
@@ -71,6 +76,7 @@ class OnPolicyAgent(Policy):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = Policy.get_argument(parser)
         parser.add_argument('--horizon', type=int, default=2048)
         parser.add_argument('--normalize-adv', action='store_true')
@@ -87,27 +93,32 @@ class OffPolicyAgent(Policy):
             self,
             memory_capacity,
             **kwargs):
+        """Set replay memory capacity and initialize the shared policy settings."""
         super().__init__(memory_capacity=memory_capacity, **kwargs)
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = Policy.get_argument(parser)
         parser.add_argument('--memory-capacity', type=int, default=int(1e6))
         return parser
 
 
 class IRLPolicy(Policy):
+    """Base configuration and interface for inverse reinforcement learning models."""
     requires_log_probs = False
     def __init__(
             self,
             n_training=1,
             memory_capacity=0,
             **kwargs):
+        """Set the discriminator update count and shared policy configuration."""
         self.n_training = n_training
         super().__init__(memory_capacity=memory_capacity, **kwargs)
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = Policy.get_argument(parser)
         parser.add_argument('--lr-ail', type=float, default=1e-4,
                             help='Learning rate for GAIL, GAIfO, AIRL. <default: %(default)s>')

@@ -26,6 +26,7 @@ def _vector(value):
 
 
 def _format_vector(value):
+    """Serialize numeric vector entries as space-separated MJCF values."""
     return " ".join(f"{number:.17g}" for number in value)
 
 
@@ -43,6 +44,7 @@ def _convert_global_coordinates(xml):
     compiler.attrib.pop("coordinate")
 
     def convert_element(element, origin):
+        """Convert an element's position and segment endpoints relative to the body origin."""
         if "pos" in element.attrib:
             element.attrib["pos"] = _format_vector(_vector(element.attrib["pos"]) - origin)
         if "fromto" in element.attrib:
@@ -50,6 +52,7 @@ def _convert_global_coordinates(xml):
             element.attrib["fromto"] = _format_vector(endpoints.reshape(-1))
 
     def convert_body(body, parent_origin):
+        """Convert an unrotated body and its descendants from global to local coordinates."""
         if {'quat', 'euler', 'axisangle', 'xyaxes', 'zaxis'} & body.attrib.keys():
             raise ValueError('Global-coordinate conversion only supports unrotated body frames')
         body_origin = _vector(body.attrib.get("pos", "0 0 0"))
@@ -71,7 +74,10 @@ def _convert_global_coordinates(xml):
 
 
 class MujocoEnv(GymnasiumMujocoEnv):
+    """Run historical research task definitions on the native Gymnasium MuJoCo backend."""
     def __init__(self, model_path, frame_skip, render_mode=None, **kwargs):
+        """Convert research XML and initialize the simulator, rendering mode, and observation space.
+        """
         if hasattr(model_path, "root"):
             stream = io.StringIO()
             model_path.root.write(stream)
@@ -97,12 +103,14 @@ class MujocoEnv(GymnasiumMujocoEnv):
         self.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=obs.shape, dtype=obs.dtype)
 
     def _initialize_simulation(self):
+        """Build the MuJoCo model and data from the converted research XML."""
         model = mujoco.MjModel.from_xml_string(self._research_xml)
         data = mujoco.MjData(model)
         mujoco.mj_forward(model, data)
         return model, data
 
     def do_simulation(self, ctrl, n_frames):
+        """Advance MuJoCo by the requested frames and render in human mode."""
         super().do_simulation(ctrl, n_frames)
         if self.render_mode == "human":
             self.render()

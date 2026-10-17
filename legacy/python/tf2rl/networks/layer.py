@@ -4,22 +4,27 @@ from tensorflow.keras import regularizers, initializers, backend as K
 
 #@tf.function
 def identity(out, index):
+    """Return the selected feature column unchanged."""
     return tf.identity(tf.gather(out, [index], axis=1), name='identity_output')
 
 #@tf.function
 def sin(out, index):
+    """Return the sine of the selected feature column."""
     return tf.sin(tf.gather(out, [index], axis=1), name='sin_output')
 
 #@tf.function
 def cos(out, index):
+    """Return the cosine of the selected feature column."""
     return tf.cos(tf.gather(out, [index], axis=1), name='cos_output')
 
 #@tf.function
 def sigmoid(out, index):
+    """Return the sigmoid of the selected feature column."""
     return tf.sigmoid(tf.gather(out, [index], axis=1), name='sig_output')
 
 #@tf.function
 def mult(out, index):
+    """Return the squared sum of the two operator inputs, matching the legacy formula."""
     sum1 = tf.gather(out, [index], axis=1)
     sum2 = tf.gather(out, [index + 1], axis=1)
     sum_input = tf.add(sum1, sum2)
@@ -42,6 +47,7 @@ def mult(out, index):
 
 #@tf.function
 def log(out, index):
+    """Return the logarithm of the selected column clamped to zero, with a 0.1 offset."""
     relax = 0.1
     z = tf.gather(out, [index], axis=1)
     z = tf.maximum(z, 0.)
@@ -49,6 +55,7 @@ def log(out, index):
 
 #@tf.function
 def div(out, index):
+    """Divide adjacent columns with 0.1 offsets and clamp the denominator column to zero."""
     relax = 0.1
     n = tf.gather(out, [index], axis=1)
     d = tf.gather(out, [index + 1], axis=1)
@@ -68,6 +75,7 @@ class L1L2_EQL(regularizers.Regularizer):
     """
 
     def __init__(self, l1=0.0, l2=0.0):
+        """Initialize mutable L1 and L2 regularization coefficients."""
         with K.name_scope(self.__class__.__name__):
             self.l1 = K.variable(l1, name='l1')
             self.l2 = K.variable(l2, name='l2')
@@ -75,12 +83,14 @@ class L1L2_EQL(regularizers.Regularizer):
             self.val_l2 = l2
 
     def set_l1_l2(self, l1, l2):
+        """Update the regularizer's L1 and L2 coefficients in place."""
         K.set_value(self.l1, l1)
         K.set_value(self.l2, l2)
         self.val_l1 = l1
         self.val_l2 = l2
 
     def __call__(self, x):
+        """Return the weighted L1 and L2 penalties for the input tensor."""
         regularization = 0.
         if not self.val_l1 == 0.:
             regularization += K.sum(self.l1 * K.abs(x))
@@ -89,14 +99,18 @@ class L1L2_EQL(regularizers.Regularizer):
         return regularization
 
     def get_config(self):
+        """Return the configuration needed to serialize this layer or regularizer."""
         config = {'l1': float(K.get_value(self.l1)),
                   'l2': float(K.get_value(self.l2))}
         return config
 
 
 class EqlLayer(keras.layers.Layer):
+    """Legacy equation layer combining learned affine terms with symbolic operators."""
     def __init__(self, w_initializer, b_initializer, v, lmbda=0,
                  constraint=None, mask=None, exclude=None, dynamic_lmbda = False):
+        """Configure legacy operator groups, parameter initialization, masking, and regularization.
+        """
         super(EqlLayer, self).__init__()
         self._is_reg_dyn = dynamic_lmbda
         if exclude is None:
@@ -132,6 +146,7 @@ class EqlLayer(keras.layers.Layer):
             self.activations.remove(mult)
 
     def build(self, input_shape):
+        """Create layer weights and biases for the input feature dimension."""
         self.w = self.add_weight(
             shape=(input_shape[-1], 6 * self.v - self.v * self.exclusion),
             initializer=self.w_initializer,
@@ -145,6 +160,7 @@ class EqlLayer(keras.layers.Layer):
         )
 
     def call(self, inputs, training, l1_regularizers = 0):
+        """Apply learned affine terms and the legacy nonlinear equation operators."""
         if training is None: tf.print("[WARNNING]The training state of the layer needs to be set. [call EqlLayer]")
         if self._is_reg_dyn and training:
             print("[DEBUG] The regularizer is set to {} [call EqlLayer]".format(l1_regularizers))
@@ -173,7 +189,9 @@ class EqlLayer(keras.layers.Layer):
 
 
 class DenseLayer(keras.layers.Layer):
+    """Scalar dense output layer with configurable equation-network regularization."""
     def __init__(self, w_initializer, b_initializer, lmbda=0, constraint=None ,mask=None, activation = None, dynamic_lmbda=False):
+        """Configure the scalar output activation, initializers, constraints, and L1 regularizer."""
         super(DenseLayer, self).__init__()
         self._is_reg_dyn = dynamic_lmbda
         self.activation = activation
@@ -187,6 +205,7 @@ class DenseLayer(keras.layers.Layer):
         self.constraint=constraint
 
     def build(self, input_shape):
+        """Create layer weights and biases for the input feature dimension."""
         self.w = self.add_weight(
             shape=(input_shape[-1], 1),
             initializer=self.w_initializer,
@@ -199,6 +218,7 @@ class DenseLayer(keras.layers.Layer):
         )
 
     def call(self, inputs, training, l1_regularizers, mask = None):
+        """Return the scalar affine output with its configured activation and regularization."""
         if training is None: tf.print("The training state of the layer needs to be set. [call DenseLayer]")
         if self._is_reg_dyn and training:
             print("[DEBUG] The regularizer is set to {} [call DenseLayer]".format(l1_regularizers))
@@ -223,8 +243,10 @@ class DenseLayer(keras.layers.Layer):
 from tf2rl.networks.eqn import EquationLayer as EqlLayerv2, EquationOutput as DenseLayerv2
 
 class LegacyEqlLayerv2(keras.layers.Layer):
+    """Preserved equation-layer variant with the historical operator definitions."""
     def __init__(self, w_initializer, b_initializer, v, lmbda=0,
                  constraint=None, mask=None, exclude=None, dynamic_lmbda=False):
+        """Configure the preserved equation operators, initializers, and regularization."""
         super(LegacyEqlLayerv2, self).__init__()
         self._is_reg_dyn = dynamic_lmbda
         if exclude is None:
@@ -272,6 +294,7 @@ class LegacyEqlLayerv2(keras.layers.Layer):
 
 
     def build(self, input_shape):
+        """Create layer weights and biases for the input feature dimension."""
         self.w = self.add_weight(
             shape=(input_shape[-1], 9 * self.v - self.v * self.exclusion),
             initializer=self.w_initializer,
@@ -288,6 +311,7 @@ class LegacyEqlLayerv2(keras.layers.Layer):
 
     #@tf.function
     def call(self, inputs, training): #, l1_regularizers = 0):
+        """Apply learned affine terms and the legacy nonlinear equation operators."""
         print("[DEBUG] initializing [call LegacyEqlLayerv2]")
         loss = 0
         sigma = 1e-3
@@ -326,7 +350,9 @@ class LegacyEqlLayerv2(keras.layers.Layer):
         return output
 
 class EqlLayerv3(LegacyEqlLayerv2):
+    """Legacy equation layer variant with configurable nonlinear operators."""
     def __init__(self, w_initializer, b_initializer, v, **kwargs):
+        """Configure the legacy equation operator groups and parameter initialization."""
         super(EqlLayerv3, self).__init__(w_initializer=w_initializer,
                                          b_initializer=b_initializer,
                                          v=v, **kwargs)
@@ -335,6 +361,7 @@ class EqlLayerv3(LegacyEqlLayerv2):
     #     super(EqlLayerv3, self).build(input_shape)
 
     def call(self, inputs, training):
+        """Apply learned affine terms and the legacy nonlinear equation operators."""
         print("[DEBUG] initializing [call EqlLayerv3]")
         loss = 0
         sigma = 1e-3
@@ -352,7 +379,9 @@ class EqlLayerv3(LegacyEqlLayerv2):
 
 
 class DenseEBMLayer(keras.layers.Layer):
+    """Legacy dense output layer for the energy-based discriminator."""
     def __init__(self, unit, w_initializer, b_initializer, activation = None):
+        """Configure separate expert and agent output parameters and activation."""
         super(DenseEBMLayer, self).__init__()
         self.unit = unit
         if activation:
@@ -364,6 +393,7 @@ class DenseEBMLayer(keras.layers.Layer):
         self.b_initializer = initializers.get(b_initializer)
     def build(self, input_shape):
         # Expert Layer
+        """Create layer weights and biases for the input feature dimension."""
         self.w_e = self.add_weight(
             shape=(input_shape[0][-1], self.unit),
             initializer=self.w_initializer,
@@ -383,6 +413,7 @@ class DenseEBMLayer(keras.layers.Layer):
         )
     #@tf.function
     def call(self, inputs, is_expert, training=None):
+        """Return the scalar affine output with its configured activation and regularization."""
         print("[DEBUG] initializing [call DenseEBMLayer]")
         if is_expert:
             out = self.activation(tf.matmul(inputs[0], self.w_e) + self.b_e)

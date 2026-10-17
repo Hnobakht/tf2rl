@@ -72,6 +72,7 @@ def periodically(body, period, name="periodically"):
             initializer=tf.constant_initializer(period, dtype=tf.int64))
 
         def _wrapped_body():
+            """Run the periodic operation and reset its invocation counter."""
             with tf.control_dependencies([body()]):
                 # Done the deed, resets the counter.
                 return counter.assign(1)

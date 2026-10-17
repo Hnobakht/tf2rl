@@ -12,12 +12,15 @@ from tf2rl.envs.utils import is_discrete
 
 
 class OnPolicyTrainer(Trainer):
+    """Collect fixed-length rollouts and update an on-policy agent."""
     def __init__(self, *args, **kwargs):
+        """Configure training, replay storage, evaluation, and checkpoint handling."""
         super().__init__(*args, **kwargs)
 
     @with_summary_writer
     def __call__(self):
         # Prepare buffer
+        """Run the training loop, including data collection, policy updates, and evaluation."""
         self.replay_buffer = get_replay_buffer(
             self._policy, self._env)
         kwargs_local_buf = get_default_rb_dict(
@@ -143,6 +146,7 @@ class OnPolicyTrainer(Trainer):
         tf.summary.flush()
 
     def finish_horizon(self, last_val=0):
+        """Finish the rollout by computing return targets and policy advantages."""
         self.local_buffer.on_episode_end()
         samples = self.local_buffer.get_all_transitions()
         rews = np.append(samples["rew"], last_val)
@@ -163,4 +167,5 @@ class OnPolicyTrainer(Trainer):
         self.local_buffer.clear()
 
     def evaluate_policy(self, total_steps):
+        """Evaluate the policy in the test environment and return its performance."""
         return super().evaluate_policy(total_steps)

@@ -6,6 +6,7 @@ from tf2rl.experiments.trainer import Trainer
 
 
 def main():
+    """Parse the example options and launch CURL training."""
     dm_envs = {
         'finger': ['finger', 'spin', 2],
         'cartpole': ['cartpole', 'balance', 4],
@@ -34,6 +35,7 @@ def main():
     input_obs_shape = (84, 84, 9)
 
     def make_env():
+        """Create and wrap the image environment used by the CURL example."""
         return DMCWrapper(
             dmc2gym.make(
                 domain_name=domain_name,

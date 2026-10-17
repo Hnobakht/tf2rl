@@ -21,10 +21,12 @@ from tf2rl.networks.equation_export import evaluate_equation, extract_equation, 
 
 
 def arrays(model):
+    """Copy the model's trainable parameters into NumPy arrays."""
     return [value.numpy().copy() for value in model.trainable_variables]
 
 
 def masked_zeros(model):
+    """Assert that masked parameters remain zero and return their count."""
     pruned = 0
     for layer in model.parameter_layers:
         for weight, mask in ((layer.w, layer.w_mask), (layer.b, layer.b_mask)):
@@ -36,6 +38,7 @@ def masked_zeros(model):
 
 
 def export_error(model, inputs, kind, path):
+    """Export the model and report the maximum NumPy inference error and graph size."""
     graph = extract_equation(model, reward_kind=kind)
     save_equation(graph, path)
     expected = model(inputs, training=False).numpy()
@@ -54,6 +57,7 @@ def export_error(model, inputs, kind, path):
 
 
 def main():
+    """Run equation fitting, pruning, checkpoint, and export consistency diagnostics."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=Path('.work/equation-learning-audit'))
     args = parser.parse_args()
@@ -170,6 +174,7 @@ def main():
 
     @tf.function
     def fit_polynomial():
+        """Apply one update to the polynomial fitting objective and regularization."""
         with tf.GradientTape() as tape:
             predictions = polynomial(train_x, training=False)
             objective = tf.reduce_mean(tf.square(predictions - train_y)) + tf.add_n(polynomial.losses)

@@ -5,7 +5,9 @@ from tf2rl.envs.dynamic_mjc.mjc_models import point_mass_maze
 
 
 class PointMazeEnv(mujoco_env.MujocoEnv, utils.EzPickle):
+    """Point-mass navigation task in a configurable MuJoCo maze."""
     def __init__(self, direction=1, maze_length=0.6, sparse_reward=False, no_reward=False, episode_length=100, render_mode=None):
+        """Load the task's MuJoCo model and set the number of simulation frames per action."""
         utils.EzPickle.__init__(self)
         self.sparse_reward = sparse_reward
         self.no_reward = no_reward
@@ -20,6 +22,9 @@ class PointMazeEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
     # def _step(self, a):
     def step(self, a):
+        """Advance the task with the given action and return observation, reward, episode flags, and
+        info.
+        """
         vec_dist = self.get_body_com("particle") - self.get_body_com("target")
 
         reward_dist = - np.linalg.norm(vec_dist)  # particle to target
@@ -41,10 +46,12 @@ class PointMazeEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return ob, reward, False, bool(done), dict(reward_dist=reward_dist, reward_ctrl=reward_ctrl)
 
     def viewer_setup(self):
+        """Configure the camera for this MuJoCo task."""
         self.viewer.cam.trackbodyid = -1
         self.viewer.cam.distance = 1.0
 
     def reset_model(self):
+        """Randomize the simulator's initial state and return the resulting observation."""
         qpos = self.init_qpos
         self.episode_length = 0
         qvel = self.init_qvel + self.np_random.uniform(size=self.model.nv, low=-0.01, high=0.01)
@@ -53,9 +60,11 @@ class PointMazeEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return self._get_obs()
 
     def _get_obs(self):
+        """Assemble the task observation from the current simulator state."""
         return np.concatenate([self.get_body_com("particle")[:2],
                                [np.linalg.norm(self.get_body_com("particle")[:2] - self.get_body_com("target")[:2])]
                                ])
 
     def plot_trajs(self, *args, **kwargs):
+        """Plot two-dimensional trajectory paths in the maze."""
         pass

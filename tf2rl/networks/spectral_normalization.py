@@ -7,13 +7,16 @@ import tensorflow as tf
 
 
 class SpectralNormalization(tf.keras.layers.Wrapper):
+    """Normalize a wrapped layer's kernel by its estimated spectral norm during training."""
     def __init__(self, layer, power_iterations=1, **kwargs):
+        """Wrap a layer and require a positive number of power iterations."""
         super().__init__(layer, **kwargs)
         if power_iterations < 1:
             raise ValueError("power_iterations must be positive")
         self.power_iterations = power_iterations
 
     def build(self, input_shape):
+        """Build the wrapped layer and create its non-trainable power-iteration vector."""
         super().build(input_shape)
         self.w = self.layer.kernel
         self.u = self.add_weight(name="sn_u", shape=(1, self.w.shape[-1]),
@@ -21,6 +24,7 @@ class SpectralNormalization(tf.keras.layers.Wrapper):
                                  trainable=False)
 
     def _normalize(self):
+        """Update the power-iteration estimate and normalize the wrapped kernel in place."""
         weights = tf.reshape(self.w, (-1, self.w.shape[-1]))
         u = self.u
         for _ in range(self.power_iterations):
@@ -33,6 +37,7 @@ class SpectralNormalization(tf.keras.layers.Wrapper):
         return tf.constant(0)
 
     def call(self, inputs, training=None):
+        """Normalize the wrapped kernel during training and return the layer output."""
         if training is True:
             self._normalize()
         elif training is not None and not isinstance(training, bool):

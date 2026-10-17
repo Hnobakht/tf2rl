@@ -9,6 +9,7 @@ from tf2rl.algos.sac import SAC
 from tf2rl.algos.airl import AIRL
 
 class AIRL_SAC(SAC):
+    """Legacy SAC-based AIRL variant with an adversarial critic update."""
     def __init__(
             self,
             state_shape,
@@ -16,12 +17,14 @@ class AIRL_SAC(SAC):
             # irl,
             name="AIRL_SAC",
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         super().__init__(state_shape, action_dim, name, **kwargs)
         # self._irl=irl
         # assert isinstance(self._irl, AIRL), "AIRL_SAC needs to have AIRL as its discriminator."
 
     def train(self, states, actions, next_states, targets, dones, weights=None):
 
+        """Update the legacy SAC actor and critics using supplied adversarial targets."""
         td_errors, actor_loss, qf1, qf1_loss, logp_min, logp_max, logp_mean = self._train_body(
             states, actions, next_states, targets, dones)
 
@@ -40,6 +43,8 @@ class AIRL_SAC(SAC):
 
     @tf.function
     def _train_body(self, states, actions, next_states, targets, dones):
+        """Apply SAC actor and critic gradients against adversarial targets and return diagnostics.
+        """
         print("[DEBUG] initializing {_train_body AIRL_SAC}")
         with tf.device(self.device):
             assert len(dones.shape) == 2

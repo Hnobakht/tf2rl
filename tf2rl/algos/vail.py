@@ -6,12 +6,14 @@ from tf2rl.algos.policy_base import IRLPolicy
 
 
 class Discriminator(tf.keras.Model):
+    """Variational discriminator with an encoded Gaussian information bottleneck."""
     LOG_SIG_CAP_MAX = 2  # np.e**2 = 7.389
     LOG_SIG_CAP_MIN = -20  # np.e**-10 = 4.540e-05
     EPS = 1e-6
 
     def __init__(self, state_shape, action_dim, units=(32, 32), decoder_units = (1,),
                  n_latent_unit=32, enable_sn=False, name="Discriminator", w_ini = 'orthogonal'):
+        """Build the expert-versus-agent discriminator with the requested architecture."""
         super().__init__(name=name)
         self._encoder_list = []
         self._decoder_list = []
@@ -29,6 +31,7 @@ class Discriminator(tf.keras.Model):
             raise NotImplementedError
 
     def _encoder_model(self, units, activation):
+        """Build the encoder that predicts latent Gaussian parameters."""
         index=0
         for unit in units:
             self._encoder_list.append(Dense(unit, name="L_EN"+str(index),
@@ -37,6 +40,7 @@ class Discriminator(tf.keras.Model):
             index += 1
 
     def _decoder_model(self, units, activation, output_activation):
+        """Build the discriminator network that maps latent samples to outputs."""
         if  not units[0] == 1:
             index = 0
             for unit in units:
@@ -55,6 +59,9 @@ class Discriminator(tf.keras.Model):
 
     def call(self, inputs, training):
 
+        """Encode inputs, sample latent features, and return discriminator outputs and latent
+        statistics.
+        """
         features = tf.concat((inputs[0][:,:-1], inputs[1]), axis=1)
         for layer in self._encoder_list:
             features = layer(features)
@@ -81,6 +88,7 @@ class Discriminator(tf.keras.Model):
 
 
 class VAIL(IRLPolicy):
+    """Variational adversarial imitation learning with a latent information bottleneck."""
     def __init__(
             self,
             state_shape,
@@ -97,6 +105,7 @@ class VAIL(IRLPolicy):
             name="VAIL",
             is_debug = False,
             **kwargs):
+        """Configure the imitation objective, discriminator networks, and optimizer settings."""
         IRLPolicy.__init__(self, name=name, n_training=1, **kwargs)
         assert isinstance(decoder_units, tuple) and isinstance(units, tuple),\
             "[ERORR] the units should be tuple[__init__ VAIL]"
@@ -118,6 +127,9 @@ class VAIL(IRLPolicy):
         self._init_static_graph(state_shape, action_dim, n_latent_unit)
 
     def train(self, agent_states, agent_acts, expert_states, expert_acts, **kwargs):
+        """
+        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """
         with tf.device(self.device):
             agent_states, agent_acts, expert_states, expert_acts = \
                 tuple([tf.constant(i) for i in (agent_states, agent_acts, expert_states, expert_acts)])
@@ -139,6 +151,7 @@ class VAIL(IRLPolicy):
                 [tf.summary.histogram(name=self.policy_name + "/L_logstd, {}".format(i.shape), data=i) for i in self.disc.l_logstd.get_weights()]
 
     def _compute_js_divergence(self, fake_logits, real_logits):
+        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs."""
         print("[DEBUG] initializing {_compute_js_divergence VAIL}")
         with tf.device(self.device):
             m = (fake_logits + real_logits) / 2.
@@ -163,6 +176,9 @@ class VAIL(IRLPolicy):
         return kl_dist
 
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts, training):
+        """
+        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """
         epsilon = 1e-8
         with tf.device(self.device):
             with tf.GradientTape() as tape:
@@ -216,6 +232,9 @@ class VAIL(IRLPolicy):
         return loss, accuracy, real_kl, fake_kl, js_divergence
 
     def inference(self, states, actions, next_states=None):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         if states.ndim == actions.ndim == 1:
             states = np.expand_dims(states, axis=0)
             actions = np.expand_dims(actions, axis=0)
@@ -224,6 +243,9 @@ class VAIL(IRLPolicy):
         return out
 
     def _inference_body(self, states, actions, training):
+        """
+        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """
         print("[DEBUG] initializing {_inference_body VAIL}")
         with tf.device(self.device):
             sig, _, _ = self.disc((states, actions), training=training)
@@ -231,6 +253,7 @@ class VAIL(IRLPolicy):
         return out
 
     def _init_static_graph(self, state_shape, action_dim, n_latent_unit):
+        """Set up TensorFlow signatures and traced model, training, or inference computations."""
         print("[DEBUG] initializing {_init_static_graph VAIL}")
         # Compiling the static graphs
         assert len(state_shape) == 1, "[ERROR] This SAC only supports RAM env {_init_static_graph SAC}"
@@ -270,6 +293,7 @@ class VAIL(IRLPolicy):
 
     @staticmethod
     def get_argument(parser=None):
+        """Add this component's command-line options and return the argument parser."""
         parser = IRLPolicy.get_argument(parser)
         parser.add_argument('--units-decoder', type=str, default="1",
                             help='Decoder architecture for VAIL. use case: 128,128 or 400,300 <default: %(default)s>')

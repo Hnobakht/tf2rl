@@ -5,6 +5,7 @@ import datetime
 
 
 def initialize_logger(logging_level=logging.INFO, output_dir="results/", filename=None, save_log=True):
+    """Configure the tf2rl logger with console output and optional file logging."""
     logger = getLogger("tf2rl")
     logger.setLevel(logging_level)
 

@@ -12,6 +12,10 @@ class AbsorbingWrapper(gym.ObservationWrapper):
     """
 
     def __init__(self, env, indicator=1):
+        """
+        Validate vector observations and a positive absorbing indicator, then extend the observation
+        space.
+        """
         super().__init__(env)
         space = env.observation_space
         if not isinstance(space, gym.spaces.Box) or len(space.shape) != 1:
@@ -27,15 +31,18 @@ class AbsorbingWrapper(gym.ObservationWrapper):
         )
 
     def observation(self, observation):
+        """Append the non-absorbing indicator to the observation."""
         return self.get_non_absorbing_state(observation)
 
     def get_non_absorbing_state(self, obs):
+        """Append the non-absorbing indicator to an ordinary observation."""
         obs = np.asarray(obs, dtype=self.observation_space.dtype)
         if obs.shape[-1:] != self.env.observation_space.shape:
             raise ValueError(f"Expected raw observation width {self.env.observation_space.shape}, got {obs.shape}")
         return np.concatenate((obs, np.zeros(obs.shape[:-1] + (1,), dtype=obs.dtype)), axis=-1)
 
     def get_absorbing_state(self):
+        """Return the canonical absorbing observation with its indicator set."""
         obs = np.zeros(self.observation_space.shape, dtype=self.observation_space.dtype)
         obs[-1] = self._indicator
         return obs

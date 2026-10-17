@@ -2,6 +2,7 @@ from gymnasium.spaces import Discrete, Box
 
 
 def is_discrete(space):
+    """Return whether an action space is Discrete; reject spaces other than Discrete or Box."""
     if isinstance(space, Discrete):
         return True
     elif isinstance(space, Box):
@@ -11,6 +12,7 @@ def is_discrete(space):
 
 
 def get_act_dim(action_space):
+    """Return the number of discrete actions or the continuous action-vector dimension."""
     if isinstance(action_space, Discrete):
         return action_space.n
     elif isinstance(action_space, Box):
@@ -20,6 +22,7 @@ def get_act_dim(action_space):
 
 
 def is_mujoco_env(env):
+    """Return whether the environment uses a MuJoCo base environment."""
     try:
         from gymnasium.envs.mujoco import MujocoEnv
     except ImportError:
@@ -28,4 +31,5 @@ def is_mujoco_env(env):
 
 
 def is_atari_env(env):
+    """Return whether the environment is an Atari environment."""
     return hasattr(env.unwrapped, "ale")

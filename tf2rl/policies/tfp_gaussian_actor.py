@@ -3,6 +3,7 @@ import tensorflow_probability as tfp
 
 
 class GaussianActor(tf.keras.Model):
+    """Diagonal Gaussian action policy with optional squashing and action scaling."""
     LOG_STD_CAP_MAX = 2  # np.e**2 = 7.389
     LOG_STD_CAP_MIN = -20  # np.e**-10 = 4.540e-05
     EPS = 1e-6
@@ -11,6 +12,9 @@ class GaussianActor(tf.keras.Model):
                  hidden_activation="relu", state_independent_std=False,
                  squash=False, name='gaussian_policy',
                  initializer = tf.keras.initializers.glorot_uniform()):
+        """Build Gaussian action heads and configure action scaling, standard deviations, and
+        squashing.
+        """
         super().__init__(name=name)
 
         layers = tf.keras.layers
@@ -84,6 +88,9 @@ class GaussianActor(tf.keras.Model):
         return actions, log_pis
 
     def compute_log_probs(self, states, actions):
+        """
+        Return log probabilities of supplied actions, accounting for scaling and optional squashing.
+        """
         raw_actions = actions / self._max_action
         dist = self._compute_dist(states)
         if self._squash:
@@ -94,9 +101,11 @@ class GaussianActor(tf.keras.Model):
         return dist.log_prob(raw_actions)
 
     def compute_entropy(self, states):
+        """Return the action distribution entropy for each observation."""
         return self._compute_dist(states).entropy()
 
 class GaussianActor_pixels(tf.keras.Model):
+    """Gaussian continuous-action policy with convolutional image features."""
     LOG_STD_CAP_MAX = 2  # np.e**2 = 7.389
     LOG_STD_CAP_MIN = -20  # np.e**-10 = 4.540e-05
     EPS = 1e-6
@@ -106,6 +115,7 @@ class GaussianActor_pixels(tf.keras.Model):
                  squash=False, name='gaussian_policy',
                  initializer=tf.keras.initializers.glorot_uniform(),
                  is_pixel=False):
+        """Build image features and Gaussian action heads with optional action squashing."""
         super().__init__(name=name)
 
         layers = tf.keras.layers
