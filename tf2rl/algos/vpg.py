@@ -10,7 +10,8 @@ from tf2rl.envs.atari_wrapper import LazyFrames
 
 class CriticV(tf.keras.Model):
     """Neural state-value function for policy-gradient agents."""
-    def __init__(self, state_shape, units, name='critic_v', hidden_activation='relu'):
+    def __init__(self, state_shape, units, name='critic_v', hidden_activation='relu',
+                 device='/cpu:0'):
         """Build the hidden state layers and scalar value head."""
         super().__init__(name=name)
 
@@ -18,7 +19,7 @@ class CriticV(tf.keras.Model):
         self.l2 = Dense(units[1], name="L2", activation=hidden_activation)
         self.l3 = Dense(1, name="L2", activation='linear')
 
-        with tf.device('/cpu:0'):
+        with tf.device(device):
             self(tf.constant(
                 np.zeros(shape=(1,)+state_shape, dtype=np.float32)))
 
@@ -64,19 +65,21 @@ class VPG(OnPolicyAgent):
         else:
             self.actor_critic = None
             if actor is None:
-                if is_discrete:
-                    self.actor = CategoricalActor(
-                        state_shape, action_dim, actor_units)
-                else:
-                    self.actor = GaussianActor(
-                        state_shape, action_dim, max_action, actor_units,
-                        hidden_activation=hidden_activation_actor,
-                        state_independent_std=True)
+                with tf.device(self.device):
+                    if is_discrete:
+                        self.actor = CategoricalActor(
+                            state_shape, action_dim, actor_units)
+                    else:
+                        self.actor = GaussianActor(
+                            state_shape, action_dim, max_action, actor_units,
+                            hidden_activation=hidden_activation_actor,
+                            state_independent_std=True)
             else:
                 self.actor = actor
             if critic is None:
                 self.critic = CriticV(state_shape, critic_units,
-                                      hidden_activation=hidden_activation_critic)
+                                      hidden_activation=hidden_activation_critic,
+                                      device=self.device)
             else:
                 self.critic = critic
             self.actor_optimizer = tf.keras.optimizers.Adam(
@@ -120,13 +123,19 @@ class VPG(OnPolicyAgent):
 
         return action.numpy(), logp.numpy(), v.numpy()
 
+    @tf.function(reduce_retracing=True)
+    def get_action_and_val_tensor(self, states, test=False):
+        """Return batched on-policy inference tensors on the configured device."""
+        with tf.device(self.device):
+            return self._get_action_logp_v_body(states, test)
+
     @tf.function
     def _get_action_logp_v_body(self, state, test):
         """Return sampled actions, their log probabilities, and state-value estimates."""
         if self.actor_critic:
-            return self.actor_critic(state, test)
+            return self.actor_critic(state, test=test)
         else:
-            action, logp = self.actor(state, test)
+            action, logp = self.actor(state, test=test)
             v = self.critic(state)
             return action, logp, v
 
@@ -134,10 +143,10 @@ class VPG(OnPolicyAgent):
     def _get_action_body(self, state, test):
         """Return batched policy actions and log probabilities on the configured device."""
         if self.actor_critic is not None:
-            action, logp = self.actor_critic(state, test)
+            action, logp = self.actor_critic(state, test=test)
             return action, logp
         else:
-            return self.actor(state, test)
+            return self.actor(state, test=test)
 
     def train(self, states, actions, advantages, logp_olds, returns):
         # Train actor and critic

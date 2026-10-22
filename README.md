@@ -19,6 +19,10 @@ See [executed experiments and limits](docs/validation.md) and the
 
 ## Installation
 
+An optional [MuJoCo Warp GPU backend](docs/mjwarp.md) adds batched simulation
+with a reusable environment API. PPO can select it with `--env-backend mjwarp`;
+HalfCheetah is the performance validation task.
+
 Use Python 3.10–3.12 and a virtual environment inside the checkout:
 
 ```bash

@@ -20,6 +20,16 @@ class PPO(VPG):
         self.target_kl=target_kl
         assert self.horizon % self.batch_size == 0 , "The horizon % batch_size should be 0. [__init__ PPO]"
 
+    @tf.function(reduce_retracing=True)
+    def train_tensor(self, states, actions, advantages, logp_olds, returns):
+        """Apply PPO losses without transferring minibatch diagnostics to the host."""
+        if self.actor_critic is not None:
+            raise NotImplementedError("Tensor updates require separate actor and critic")
+        actor_loss, _, _, _, kl = self._train_actor_body(
+            states, actions, advantages, logp_olds)
+        critic_loss = self._train_critic_body(states, returns)
+        return tf.stack([actor_loss, critic_loss, kl])
+
     def train(self, states, actions, advantages, logp_olds, returns):
         # Train actor and critic
         """Update the PPO policy and value function from a rollout batch."""

@@ -26,11 +26,13 @@ dependencies = [
 
 [project.optional-dependencies]
 mujoco = ["gymnasium[mujoco]>=1.2,<1.4"]
+mjwarp = ["gymnasium[mujoco]>=1.2,<1.4", "mujoco-warp>=3.16,<3.17"]
 render = ["gymnasium[classic-control]>=1.2,<1.4", "matplotlib>=3.8", "pillow>=10", "opencv-python-headless>=4.8"]
 dev = ["build>=1.2", "ruff>=0.11"]
 
 [project.scripts]
 eqn-train = "tf2rl.experiments.cli:main"
+ppo-train = "tf2rl.experiments.ppo:main"
 
 [tool.setuptools.packages.find]
 include = ["tf2rl*"]
