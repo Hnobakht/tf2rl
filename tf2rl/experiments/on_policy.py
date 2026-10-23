@@ -4,6 +4,7 @@ import argparse
 import importlib.metadata
 import json
 import time
+from contextlib import ExitStack
 from pathlib import Path
 
 import gymnasium as gym
@@ -12,6 +13,7 @@ import tensorflow as tf
 
 from tf2rl.algos.policy_base import OnPolicyAgent
 from tf2rl.envs.vector_env import make_vector_env
+from tf2rl.experiments.runtime import ConfigurationError, configure_tensorflow, save_run_config
 from tf2rl.experiments.vector_on_policy_trainer import VectorOnPolicyTrainer
 
 _ALGORITHMS = {}
@@ -125,7 +127,8 @@ def evaluate(policy, env_id, episodes, seed, env_kwargs):
     return {"returns": returns, "mean_return": float(np.mean(returns))}
 
 
-def main(argv=None, algorithm=None):
+def build_parser(algorithm=None):
+    """Build the compatible CLI without starting an experiment."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--algorithm", choices=sorted(_ALGORITHMS), default=algorithm or "ppo")
     parser.add_argument("--env-name", required=True)
@@ -166,38 +169,40 @@ def main(argv=None, algorithm=None):
     parser.add_argument("--njmax", type=int, default=128)
     parser.add_argument("--eval-episodes", type=int, default=3)
     parser.add_argument("--output", type=Path, default=None)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def run(args):
+    """Run one experiment from parsed options in a fresh TensorFlow process."""
     if args.epochs is None:
         args.epochs = _ALGORITHMS[args.algorithm]["default_epochs"]
     if args.output is None:
         args.output = Path("results") / args.algorithm
     if not isinstance(args.policy_kwargs, dict):
-        parser.error("--policy-kwargs must be a JSON object")
+        raise ConfigurationError("--policy-kwargs must be a JSON object")
     if args.target_kl is not None and args.algorithm != "ppo":
-        parser.error("--target-kl is a PPO option; use --policy-kwargs for other algorithms")
+        raise ConfigurationError(
+            "--target-kl is a PPO option; use --policy-kwargs for other algorithms"
+        )
     if min(args.num_envs, args.rollout_steps, args.iterations, args.batch_size, args.epochs) < 1:
-        parser.error("Counts must be positive")
+        raise ConfigurationError("Counts must be positive")
     if args.eval_episodes < 0 or args.warmup_iterations < 0:
-        parser.error("Evaluation and warmup counts must be nonnegative")
+        raise ConfigurationError("Evaluation and warmup counts must be nonnegative")
     if args.cpu_threads < 1 or args.checkpoint_interval < 1:
-        parser.error("cpu-threads and checkpoint-interval must be positive")
+        raise ConfigurationError("cpu-threads and checkpoint-interval must be positive")
     if len(args.units) != 2 or min(args.units) < 1:
-        parser.error("--units requires two positive hidden widths")
+        raise ConfigurationError("--units requires two positive hidden widths")
     count = args.num_envs * args.rollout_steps
     if count % args.batch_size:
-        parser.error("num-envs * rollout-steps must be divisible by batch-size")
+        raise ConfigurationError("num-envs * rollout-steps must be divisible by batch-size")
     gpus = tf.config.list_physical_devices("GPU")
     if args.gpu >= len(gpus):
-        parser.error("Select a visible --gpu for GPU policy training, or -1 for CPU")
+        raise ConfigurationError("Select a visible --gpu for GPU policy training, or -1 for CPU")
     if args.env_gpu is None:
         args.env_gpu = max(args.gpu, 0)
     if args.env_backend == "mjwarp" and not 0 <= args.env_gpu < len(gpus):
-        parser.error("Select a visible --env-gpu for MJWarp simulation")
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
-    tf.config.threading.set_intra_op_parallelism_threads(args.cpu_threads)
-    tf.config.threading.set_inter_op_parallelism_threads(1)
-    tf.keras.utils.set_random_seed(args.seed)
+        raise ConfigurationError("Select a visible --env-gpu for MJWarp simulation")
+    configure_tensorflow(args.seed, args.cpu_threads)
     env_kwargs = dict(args.env_kwargs)
     if args.max_episode_steps is not None:
         env_kwargs["max_episode_steps"] = args.max_episode_steps
@@ -216,13 +221,12 @@ def main(argv=None, algorithm=None):
         **backend_kwargs,
         **env_kwargs,
     )
-    args.output.mkdir(parents=True, exist_ok=True)
-    config = {
-        key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()
-    }
-    (args.output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
-    writer = tf.summary.create_file_writer(str(args.output / "events"))
+    resources = ExitStack()
+    resources.callback(env.close)
     try:
+        config = save_run_config(args)
+        writer = tf.summary.create_file_writer(str(args.output / "events"))
+        resources.callback(writer.close)
         with tf.device(device):
             policy_kwargs = dict(args.policy_kwargs)
             if args.target_kl is not None:
@@ -342,8 +346,17 @@ def main(argv=None, algorithm=None):
                 flush=True,
             )
     finally:
-        writer.close()
-        env.close()
+        resources.close()
+
+
+def main(argv=None, algorithm=None):
+    """Keep existing command-line and example entry points compatible."""
+    parser = build_parser(algorithm)
+    args = parser.parse_args(argv)
+    try:
+        return run(args)
+    except ConfigurationError as error:
+        parser.error(str(error))
 
 
 if __name__ == "__main__":

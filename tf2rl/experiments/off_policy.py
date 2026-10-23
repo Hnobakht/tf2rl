@@ -15,6 +15,7 @@ import tensorflow as tf
 
 from tf2rl.envs.vector_env import make_vector_env
 from tf2rl.experiments.demonstrations import evaluate_vector_policy
+from tf2rl.experiments.runtime import ConfigurationError, configure_tensorflow, save_run_config
 from tf2rl.experiments.vector_off_policy_trainer import VectorOffPolicyTrainer
 
 
@@ -111,7 +112,8 @@ def checkpoint_prefix(directory):
     return prefix
 
 
-def main(argv=None, algorithm=None):
+def build_parser(algorithm=None):
+    """Build the compatible CLI without starting an experiment."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--algorithm", choices=("sac", "td3", "ddpg"), default=algorithm or "sac")
     parser.add_argument("--env-name", required=True)
@@ -182,7 +184,11 @@ def main(argv=None, algorithm=None):
         help="Restore a policy and evaluate/export without training",
     )
     parser.add_argument("--output", type=Path, default=Path("results/off_policy"))
-    args = parser.parse_args(argv)
+    return parser
+
+
+def run(args):
+    """Run one experiment from parsed options in a fresh TensorFlow process."""
     if (
         min(
             args.num_envs,
@@ -200,29 +206,25 @@ def main(argv=None, algorithm=None):
         )
         < 1
     ):
-        parser.error("Counts must be positive")
+        raise ConfigurationError("Counts must be positive")
     if args.n_warmup < 0 or args.eval_episodes < 0:
-        parser.error("Warmup and evaluation counts must be nonnegative")
+        raise ConfigurationError("Warmup and evaluation counts must be nonnegative")
     if not np.isfinite(args.updates_per_transition) or args.updates_per_transition < 0:
-        parser.error("updates-per-transition must be finite and nonnegative")
+        raise ConfigurationError("updates-per-transition must be finite and nonnegative")
     if args.memory_capacity < args.batch_size:
-        parser.error("memory-capacity must be at least batch-size")
+        raise ConfigurationError("memory-capacity must be at least batch-size")
     if args.absorbing and args.algorithm != "sac":
-        parser.error("--absorbing requires SAC's DAC target implementation")
+        raise ConfigurationError("--absorbing requires SAC's DAC target implementation")
     if args.xla and args.algorithm != "sac":
-        parser.error("--xla currently supports SAC")
+        raise ConfigurationError("--xla currently supports SAC")
     if args.evaluate and args.model_dir is None:
-        parser.error("--evaluate requires --model-dir")
+        raise ConfigurationError("--evaluate requires --model-dir")
     gpus = tf.config.list_physical_devices("GPU")
     if args.gpu >= len(gpus):
-        parser.error("--gpu must name a visible GPU or be -1 for CPU")
+        raise ConfigurationError("--gpu must name a visible GPU or be -1 for CPU")
     if "mjwarp" in (args.env_backend, args.eval_env_backend) and not 0 <= args.env_gpu < len(gpus):
-        parser.error("MJWarp requires a visible --env-gpu")
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
-    tf.config.threading.set_intra_op_parallelism_threads(args.cpu_threads)
-    tf.config.threading.set_inter_op_parallelism_threads(args.cpu_inter_threads)
-    tf.keras.utils.set_random_seed(args.seed)
+        raise ConfigurationError("MJWarp requires a visible --env-gpu")
+    configure_tensorflow(args.seed, args.cpu_threads, args.cpu_inter_threads)
     env_kwargs = dict(args.env_kwargs)
     if args.max_episode_steps is not None:
         env_kwargs["max_episode_steps"] = args.max_episode_steps
@@ -272,12 +274,7 @@ def main(argv=None, algorithm=None):
             tf.train.Checkpoint(policy=policy).read(
                 restored
             ).assert_existing_objects_matched().expect_partial()
-        args.output.mkdir(parents=True, exist_ok=True)
-        config = {
-            key: str(value) if isinstance(value, Path) else value
-            for key, value in vars(args).items()
-        }
-        (args.output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+        config = save_run_config(args)
         writer = tf.summary.create_file_writer(str(args.output / "events"))
         checkpoint = tf.train.Checkpoint(policy=policy)
         manager = tf.train.CheckpointManager(
@@ -432,6 +429,16 @@ def main(argv=None, algorithm=None):
         if evaluation_env is not None:
             evaluation_env.close()
         env.close()
+
+
+def main(argv=None, algorithm=None):
+    """Keep existing command-line and example entry points compatible."""
+    parser = build_parser(algorithm)
+    args = parser.parse_args(argv)
+    try:
+        return run(args)
+    except ConfigurationError as error:
+        parser.error(str(error))
 
 
 if __name__ == "__main__":

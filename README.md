@@ -52,7 +52,8 @@ No separately modified Gym installation is required. `legacy/gym`
 is a provenance archive and must not be installed for these experiments.
 
 Dependencies are declared in `pyproject.toml`: TensorFlow 2.18, TensorFlow Probability
-0.25, tf-keras 2.18, Gymnasium 1.2–1.3, NumPy 1.26–2.0, cpprb 11, SciPy and joblib.
+0.25, tf-keras 2.18, Gymnasium 1.2–1.3, NumPy 1.26–2.0, cpprb 11, SciPy, joblib
+and Hydra 1.3.
 TFP 0.25 is tested upstream against TensorFlow 2.18 and requires the separate
 `tf-keras` package. Our model code uses `tf.keras`; no global legacy-Keras switch
 is set. [Upstream compatibility notes](https://github.com/tensorflow/probability/releases/tag/v0.25.0).
@@ -120,6 +121,19 @@ Convert exported JSON equations to LaTeX with
 expressions and include a saved-policy comparison tool.
 
 ## Experiments
+
+Hydra is available through `tf2rl-train`, with presets for the active imitation,
+on-policy and off-policy launchers. Existing CLI commands remain supported.
+
+```bash
+tf2rl-train experiment=sac args.env_name=Pendulum-v1 args.max_steps=100000
+tf2rl-train -m experiment=ppo args.env_name=Pendulum-v1 args.seed=0,1,2
+```
+
+Each Hydra job runs in a fresh process and saves its configuration, launch command,
+checkpoints and metrics in a separate directory. See [experiment configuration and
+extension](docs/experiments.md) for all presets, YAML values, demonstrations,
+custom configurations and the existing TensorFlow GPU container workflow.
 
 The common entry point is `eqn-train`, or `python -m tf2rl.experiments.cli`.
 Run `eqn-train --help` to see options. The existing four AIRL/GAIL example filenames
@@ -245,7 +259,8 @@ AIRL requires stored `logp` values; the loader does not invent missing probabili
 - `tf2rl/algos`: original algorithms, shared research losses, EQN-AIRL/EQN-GAIL and SAC.
 - `tf2rl/networks/eqn.py`: equation operators, scalar output, and reusable networks.
 - `tf2rl/envs`: native wrappers, custom tasks and packaged `assets/`.
-- `tf2rl/experiments`: common CLI, DAC trainer, demonstration I/O and expert sampling.
+- `tf2rl/experiments`: experiment launchers, component factories, DAC/vector trainers,
+  demonstration I/O and expert sampling; `conf/` holds packaged Hydra presets.
 - `scripts`: executable training workflows and TensorBoard/checkpoint inspection.
 - `legacy/python`: distinct historical algorithms and launchers, excluded from the
   runtime package. The modern trainers live in `irl_trainer.py` and `airl_trainer.py`;

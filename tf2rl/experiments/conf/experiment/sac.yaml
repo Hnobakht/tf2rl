@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+- /runner: off_policy
+- _self_
+args:
+  algorithm: sac

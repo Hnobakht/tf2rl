@@ -1,0 +1,12 @@
+defaults:
+  - experiment: sac
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: results/hydra/${args.algorithm}/${now:%Y-%m-%d}/${now:%H-%M-%S-%f}
+  sweep:
+    dir: results/hydra/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S-%f}
+    subdir: ${hydra.job.num}

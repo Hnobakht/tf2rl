@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+- /runner: on_policy
+- _self_
+args:
+  algorithm: vpg

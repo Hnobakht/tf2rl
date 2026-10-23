@@ -26,6 +26,14 @@ retains its distinct critic LayerNormalization architecture.
 and periodic warmup-distribution substitution. Active AIRL/GAIL examples share a
 CLI and create distinct training/evaluation environments.
 
+The 2026-10-23 experiment refactor separates launcher parsing/execution and
+imitation component construction, and adds a Hydra adapter over the existing
+CLIs. Algorithm and trainer implementations are unchanged. The on-policy
+launcher now closes its environment if output-directory or summary-writer setup
+fails, and still closes it if writer cleanup raises. This affects failed setup
+and cleanup only. See [experiment configuration](experiments.md) for the API,
+configuration semantics, process isolation, and GPU container commands.
+
 ## Preserved equations and conventions
 
 - EQN unary operators are identity, sine, cosine, sigmoid and

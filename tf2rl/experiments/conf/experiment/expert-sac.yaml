@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+- /runner: imitation
+- _self_
+args:
+  algorithm: sac
