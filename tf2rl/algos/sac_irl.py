@@ -48,6 +48,7 @@ class CriticQ(tf.keras.Model):
 
 class SAC_IRL(OffPolicyAgent):
     """SAC generator supporting three-valued DAC masks and absorbing-state training."""
+    replay_mask_encoding = "dac"
     def __init__(self, state_shape, action_dim, name="SAC", max_action=1., lr=3e-4,
                  lr_alpha=3e-4, actor_units=(400, 300), critic_units=(400, 300),
                  tau=5e-3, alpha=.2, auto_alpha=False, n_warmup=int(1e4),
@@ -100,6 +101,16 @@ class SAC_IRL(OffPolicyAgent):
         actions, logps = self._action_graph(state[None] if single else state, tf.constant(test))
         return (actions.numpy()[0], logps.numpy()[0]) if single else (actions, logps)
 
+    def get_action_tensor(self, states, test=False):
+        """Batched generator inference without a NumPy round trip."""
+        with tf.device(self.device):
+            return self._action_graph(tf.convert_to_tensor(states, tf.float32), tf.constant(test))
+
+    def compute_action_log_probs(self, states, actions):
+        """Evaluate the exact supplied expert actions rather than resampling."""
+        with tf.device(self.device):
+            return self.actor.compute_log_probs(states, actions)
+
     def _get_action_body(self, state, test):
         """Return batched policy actions and log probabilities on the configured device."""
         with tf.device(self.device):
@@ -127,9 +138,12 @@ class SAC_IRL(OffPolicyAgent):
         """
         if weights is not None and not np.allclose(weights, 1):
             raise NotImplementedError("SAC_IRL does not implement importance-weighted losses")
-        args = [tf.convert_to_tensor(x, dtype=tf.float32)
-                for x in (states, actions, next_states, rewards, dones)]
-        result = self._train_graph(*args)
+        # XLA executes a whole cluster on the caller's device. Keep CPU-owned
+        # variables on CPU even when a GPU is visible to a direct API caller.
+        with tf.device(self.device):
+            args = [tf.convert_to_tensor(x, dtype=tf.float32)
+                    for x in (states, actions, next_states, rewards, dones)]
+            result = self._train_graph(*args)
         for label, value in zip(("target_Q", "actor_loss", "critic_Q1_value", "critic_Q1_loss",
                                  "logp_min", "logp_max", "logp_mean"), result):
             tf.summary.scalar(self.policy_name + "/" + label, tf.reduce_mean(value))

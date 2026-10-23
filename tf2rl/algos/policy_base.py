@@ -89,6 +89,16 @@ class OffPolicyAgent(Policy):
     Base class for off-policy agents
     """
 
+    replay_mask_encoding = "done"
+
+    def get_action_tensor(self, states, test=False):
+        """Compatibility path for custom agents; agents can override to avoid host copies."""
+        result = self.get_action(states.numpy(), test=test)
+        with tf.device(self.device):
+            if isinstance(result, tuple):
+                return tuple(tf.convert_to_tensor(value) for value in result)
+            return tf.convert_to_tensor(result)
+
     def __init__(
             self,
             memory_capacity,

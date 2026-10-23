@@ -162,6 +162,17 @@ class SAC(OffPolicyAgent):
 
         return (action.numpy()[0], logps.numpy()[0]) if is_single_state else (action, logps)
 
+    def get_action_tensor(self, states, test=False):
+        """Batched SAC inference for either CPU or CUDA vector environments."""
+        with tf.device(self.device):
+            return self._get_action_body_graph(
+                tf.convert_to_tensor(states, tf.float32), tf.constant(test))
+
+    def compute_action_log_probs(self, states, actions):
+        """Density of the supplied actions, used by AIRL-compatible expert exports."""
+        with tf.device(self.device):
+            return self.actor.compute_log_probs(states, actions)
+
     def _get_action_body(self, state, test):
         """Return batched policy actions and log probabilities on the configured device."""
         print("[DEBUG] initializing {_get_action_body SAC}...")
@@ -184,7 +195,7 @@ class SAC(OffPolicyAgent):
                 states, actions, next_states, rewards, dones)
 
             tf.summary.scalar(name=self.policy_name + "/actor_loss", data=actor_loss)
-            tf.summary.scalar(name=self.policy_name + "/critic_Q1_value", data=qf1.numpy().mean())
+            tf.summary.scalar(name=self.policy_name + "/critic_Q1_value", data=tf.reduce_mean(qf1))
             tf.summary.scalar(name=self.policy_name + "/critic_Q1_loss", data=qf1_loss)
             tf.summary.scalar(name=self.policy_name + "/logp_min", data=logp_min)
             tf.summary.scalar(name=self.policy_name + "/logp_max", data=logp_max)

@@ -1,7 +1,7 @@
 """Trajectory I/O and consistent DAC augmentation for expert demonstrations."""
-from pathlib import Path
 import re
 import warnings
+from pathlib import Path
 
 import joblib
 import numpy as np
@@ -119,3 +119,83 @@ def restore_latest_n_traj(dirname, n_path=10, max_steps=None, is_logps=False, en
     """Load the newest trajectory files with optional log probabilities and DAC augmentation."""
     filenames = get_filenames(dirname, n_path)
     return _load(filenames, max_steps, env, with_logps=is_logps, absorbing=absorbing)
+
+
+def evaluate_vector_policy(policy, env, episodes=10, *, seed=10000, output_dir=None,
+                           total_steps=0, deterministic=True, metadata=None):
+    """Evaluate a frozen policy and optionally export complete per-world episodes.
+
+    Store physical final observations and explicit termination/truncation flags.
+    DAC augmentation remains the loader's responsibility, so no absorbing loops
+    are serialized or duplicated. Stochastic policies save densities evaluated
+    at the exact executed actions, including deterministic evaluation actions.
+    """
+    import tensorflow as tf
+
+    from tf2rl.experiments.vector_off_policy_trainer import numpy, physical_next_observations
+
+    if episodes < 1:
+        raise ValueError("episodes must be positive")
+    directory = Path(output_dir) if output_dir is not None else None
+    if directory is not None:
+        directory.mkdir(parents=True, exist_ok=True)
+    obs, _ = env.reset(seed=seed)
+    buffers = [[] for _ in range(env.num_envs)] if directory is not None else None
+    running_returns = np.zeros(env.num_envs, np.float64)
+    running_lengths = np.zeros(env.num_envs, np.int64)
+    returns, lengths, paths = [], [], []
+    while len(returns) < episodes:
+        states = numpy(obs)
+        with tf.device(policy.device):
+            result = policy.get_action_tensor(tf.convert_to_tensor(obs, tf.float32),
+                                               test=deterministic)
+            action = result[0] if isinstance(result, tuple) else result
+            action = tf.clip_by_value(action, env.single_action_space.low,
+                                      env.single_action_space.high)
+            logp = None
+            if directory is not None and hasattr(policy, "compute_action_log_probs"):
+                logp = numpy(policy.compute_action_log_probs(
+                    tf.convert_to_tensor(obs, tf.float32), action)).reshape(-1)
+                if not np.isfinite(logp).all():
+                    raise ValueError("Cannot export nonfinite action log probabilities")
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        terminated, truncated = numpy(terminated, bool), numpy(truncated, bool)
+        final = physical_next_observations(next_obs, terminated, truncated, info)
+        actions, rewards = numpy(action), numpy(reward)
+        if not all(np.isfinite(value).all() for value in (states, actions, final, rewards)):
+            raise ValueError("Cannot export nonfinite expert transitions")
+        running_returns += rewards
+        running_lengths += 1
+        for world in range(env.num_envs):
+            boundary = bool(terminated[world] or truncated[world])
+            if buffers is not None:
+                row = {"obs": states[world].copy(), "act": actions[world].copy(),
+                       "next_obs": final[world].copy(), "rew": rewards[world], "done": boundary,
+                       "terminated": bool(terminated[world]), "truncated": bool(truncated[world])}
+                if logp is not None:
+                    row["logp"] = logp[world]
+                buffers[world].append(row)
+            if boundary:
+                if len(returns) < episodes:
+                    episode_return = float(running_returns[world])
+                    if buffers is not None:
+                        rows = buffers[world]
+                        samples = {key: np.asarray([row[key] for row in rows]) for key in rows[0]}
+                        samples.update(format_version=2, mask_encoding="gymnasium",
+                                       metadata=dict(metadata or {}, deterministic=deterministic,
+                                                     collection_step=total_steps, world=world))
+                        filename = directory / (f"step_{total_steps:012d}_epi_{len(returns):04d}_"
+                                                f"return_{episode_return:010.4f}.pkl")
+                        save_path(samples, str(filename))
+                        paths.append(str(filename))
+                    returns.append(episode_return)
+                    lengths.append(int(running_lengths[world]))
+                if buffers is not None:
+                    buffers[world] = []
+                running_returns[world] = 0.0
+                running_lengths[world] = 0
+        obs = next_obs
+    if hasattr(env, "check_overflow"):
+        env.check_overflow()
+    return {"mean_return": float(np.mean(returns)), "mean_length": float(np.mean(lengths)),
+            "returns": returns, "lengths": lengths, "paths": paths}

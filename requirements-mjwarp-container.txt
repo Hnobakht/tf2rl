@@ -1,4 +1,4 @@
-# Standalone PPO validation runtime for an existing TensorFlow 2.21 GPU container.
+# PPO/off-policy validation runtime for an existing TensorFlow 2.21 GPU container.
 # Create a venv with --system-site-packages; keep the container's TensorFlow.
 --index-url https://mirror.nju.edu.cn/pypi/web/simple
 mujoco==3.16.0

@@ -15,6 +15,9 @@ The implementation has three reusable parts:
 - `VectorOnPolicyTrainer` collects tensor rollouts from either backend. PPO uses
   its existing clipped actor loss and critic update through a tensor interface.
   Observation and action sizes come from the environment spaces.
+- `VectorOffPolicyTrainer` collects into shared replay for SAC, TD3 and DDPG,
+  including correct final observations, optional SAC absorbing states and
+  complete expert-episode export. See [off-policy usage](mjwarp-off-policy.md).
 
 Other MuJoCo tasks need a task adapter; unsupported tasks raise an error instead
 of silently using HalfCheetah semantics. The raw simulator does not require an

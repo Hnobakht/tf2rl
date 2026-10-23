@@ -184,8 +184,6 @@ class TD3(DDPG):
         self.actor = actor_func(state_shape, action_dim, max_action, actor_units)
         self.actor_target = actor_func(state_shape, action_dim, max_action, actor_units)
         self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_actor)
-        update_target_variables(self.actor_target.weights,
-                                self.actor.weights, tau=1.)
 
         # Define and initialize Critic network
         if is_pixels:
@@ -195,8 +193,6 @@ class TD3(DDPG):
         self.critic = critic_func(state_shape, action_dim, critic_units)
         self.critic_target = critic_func(state_shape, action_dim, critic_units)
         self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_critic)
-        update_target_variables(
-            self.critic_target.weights, self.critic.weights, tau=1.)
 
         # Set hyperparameters
         self.sigma = sigma
@@ -211,6 +207,7 @@ class TD3(DDPG):
         self._is_pixels = is_pixels
 
         self.state_ndim = len(state_shape)
+        self._initialize_networks(state_shape, action_dim)
 
     def get_action(self, state, test=False, tensor=False):
         """Select an action for one observation or a batch; test mode disables exploration."""
@@ -237,6 +234,7 @@ class TD3(DDPG):
         """
         print("[DEBUG] initializing {_train_body TD3}.")
         with tf.device(self.device):
+            weights = tf.reshape(weights, (-1,))
             with tf.GradientTape() as tape:
                 td_errors1, td_errors2 = self._compute_td_error_body(states, actions, next_states, rewards, dones)
                 critic_loss = (tf.reduce_mean(td_errors1 ** 2 * weights) +
@@ -249,31 +247,15 @@ class TD3(DDPG):
             self._it.assign_add(1)
             with tf.GradientTape() as tape:
                 sample_actions = self.actor(states)
-                actor_loss = - tf.reduce_mean(self.critic(states, sample_actions))
+                actor_loss = - tf.reduce_mean(self.critic(states, sample_actions)[0])
 
             remainder = tf.math.mod(self._it, self._actor_update_freq)
 
-            def optimize_actor():
-                """Compute and apply the actor update for the current state batch."""
+            if tf.equal(remainder, 0):
                 actor_grad = tape.gradient(actor_loss, self.actor.trainable_variables)
-                return self.actor_optimizer.apply_gradients(zip(actor_grad, self.actor.trainable_variables))
-                # Update target networks. Moved the updates to the delay routine.
-            def update_critic():
-                """Soft-update the target critic parameters from the current critic."""
-                return update_target_variables(self.critic_target.weights, self.critic.weights, self.tau)
-            def update_actor():
-                """Soft-update the target actor parameters from the current actor."""
-                return update_target_variables(self.actor_target.weights, self.actor.weights, self.tau)
-
-            tf.cond(pred=tf.equal(remainder, 0), true_fn=optimize_actor, false_fn=tf.no_op)
-            tf.cond(pred=tf.equal(remainder, 0), true_fn=update_critic, false_fn=tf.no_op)
-            tf.cond(pred=tf.equal(remainder, 0), true_fn=update_actor, false_fn=tf.no_op)
-            # # Update target networks
-            # update_target_variables(
-            #     self.critic_target.weights, self.critic.weights, self.tau)
-            # update_target_variables(
-            #     self.actor_target.weights, self.actor.weights, self.tau)
-
+                self.actor_optimizer.apply_gradients(zip(actor_grad, self.actor.trainable_variables))
+                update_target_variables(self.critic_target.weights, self.critic.weights, self.tau)
+                update_target_variables(self.actor_target.weights, self.actor.weights, self.tau)
             return actor_loss, critic_loss, tf.abs(td_errors1) + tf.abs(td_errors2)
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):

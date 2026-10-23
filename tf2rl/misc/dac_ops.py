@@ -34,3 +34,33 @@ def dac_transitions(env, obs, action, next_obs, reward, terminated, truncated=Fa
             loop["logp"] = 0.0
         return [transition, loop]
     return [transition]
+
+
+def dac_batch_transitions(env, obs, actions, next_obs, rewards, terminated, *, absorbing=True):
+    """Vector equivalent of dac_transitions, with unbatched spaces and no per-world loop.
+
+    next_obs must contain final physical observations, never autoreset observations.
+    Time-limit truncation is continuing; only true terminations create self-loops.
+    Physical rows precede synthetic rows. Added loops do not count as environment steps.
+    """
+    terminated = np.asarray(terminated, bool).reshape(-1)
+    rows = {
+        "obs": np.asarray(obs, np.float32), "act": np.asarray(actions, np.float32),
+        "next_obs": np.asarray(next_obs, np.float32).copy(),
+        "rew": np.asarray(rewards, np.float32).reshape(-1, 1),
+        "done": np.where(terminated, Done.DONE.value, Done.NOT_DONE.value).astype(
+            np.float32).reshape(-1, 1),
+    }
+    count = int(terminated.sum()) if absorbing else 0
+    if count:
+        state = env.get_absorbing_state()
+        rows["next_obs"][terminated] = state
+        loops = {
+            "obs": np.repeat(state[None], count, axis=0),
+            "act": np.zeros((count, *env.single_action_space.shape), np.float32),
+            "next_obs": np.repeat(state[None], count, axis=0),
+            "rew": np.zeros((count, 1), np.float32),
+            "done": np.full((count, 1), Done.ABSORBING.value, np.float32),
+        }
+        rows = {key: np.concatenate((value, loops[key]), axis=0) for key, value in rows.items()}
+    return rows

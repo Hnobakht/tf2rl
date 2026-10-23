@@ -74,7 +74,12 @@ class GaussianActor(tf.keras.Model):
         Compute actions and log probabilities of the selected action
         """
         dist = self._compute_dist(states)
-        raw_actions = tf.cond(tf.cast(test, tf.bool), dist.mean, dist.sample)
+        # Training passes a Python bool: avoid differentiating an unused tf.cond
+        # branch, whose TFP broadcast gradients are incompatible with XLA.
+        if isinstance(test, bool):
+            raw_actions = dist.mean() if test else dist.sample()
+        else:
+            raw_actions = tf.cond(tf.cast(test, tf.bool), dist.mean, dist.sample)
         log_pis = dist.log_prob(raw_actions)
 
         if self._squash:

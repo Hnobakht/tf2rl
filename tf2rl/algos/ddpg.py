@@ -73,19 +73,36 @@ class DDPG(OffPolicyAgent):
         self.actor = Actor(state_shape, action_dim, max_action, actor_units)
         self.actor_target = Actor(state_shape, action_dim, max_action, actor_units)
         self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_actor)
-        update_target_variables(self.actor_target.weights,
-                                self.actor.weights, tau=1.)
 
         # Define and initialize Critic network
         self.critic = Critic(state_shape, action_dim, critic_units)
         self.critic_target = Critic(state_shape, action_dim, critic_units)
         self.critic_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_critic)
-        update_target_variables(self.critic_target.weights,
-                                self.critic.weights, tau=1.)
 
         # Set hyperparameters
         self.sigma = sigma
         self.tau = tau
+        self._initialize_networks(state_shape, action_dim)
+
+    def _initialize_networks(self, state_shape, action_dim):
+        """Build lazy Keras networks before copying targets or creating optimizer slots."""
+        with tf.device(self.device):
+            dtype = tf.uint8 if getattr(self, "_is_pixels", False) else tf.float32
+            states = tf.zeros((1, *state_shape), dtype)
+            actions = tf.zeros((1, action_dim), tf.float32)
+            self.actor(states)
+            self.actor_target(states)
+            self.critic(states, actions)
+            self.critic_target(states, actions)
+            update_target_variables(self.actor_target.weights, self.actor.weights, tau=1.)
+            update_target_variables(self.critic_target.weights, self.critic.weights, tau=1.)
+            self.actor_optimizer.build(self.actor.trainable_variables)
+            self.critic_optimizer.build(self.critic.trainable_variables)
+
+    def get_action_tensor(self, states, test=False):
+        """Tensor inference shared by DDPG and TD3 vector collectors."""
+        with tf.device(self.device):
+            return self.get_action(states, test=test, tensor=True)
 
     def get_action(self, state, test=False, tensor=False):
         """Select an action for one observation or a batch; test mode disables exploration."""

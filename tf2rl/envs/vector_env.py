@@ -5,7 +5,15 @@ import numpy as np
 
 
 def make_vector_env(
-    env_id, num_envs=1, *, backend="gymnasium", tensors=False, device="cuda:0", **kwargs
+    env_id,
+    num_envs=1,
+    *,
+    backend="gymnasium",
+    tensors=False,
+    device="cuda:0",
+    absorbing=False,
+    absorbing_indicator=0.1,
+    **kwargs,
 ):
     """Create same-step-autoreset environments with a consistent five-value API.
 
@@ -17,14 +25,25 @@ def make_vector_env(
             from tf2rl.envs.mjwarp import MJWarpVectorEnv
         except ImportError as error:
             raise ImportError("MJWarp requires the optional 'mjwarp' dependencies") from error
-        return MJWarpVectorEnv(env_id, num_envs, tensors=tensors, device=device, **kwargs)
-    if backend != "gymnasium":
+        env = MJWarpVectorEnv(env_id, num_envs, tensors=tensors, device=device, **kwargs)
+    elif backend == "gymnasium":
+        env = gym.vector.SyncVectorEnv(
+            [lambda: gym.make(env_id, **kwargs)] * num_envs,
+            autoreset_mode=gym.vector.AutoresetMode.SAME_STEP,
+        )
+        if tensors:
+            env = TensorVectorEnv(env, device)
+    else:
         raise ValueError(f"Unknown environment backend {backend!r}")
-    env = gym.vector.SyncVectorEnv(
-        [lambda: gym.make(env_id, **kwargs)] * num_envs,
-        autoreset_mode=gym.vector.AutoresetMode.SAME_STEP,
-    )
-    return TensorVectorEnv(env, device) if tensors else env
+    if absorbing:
+        from tf2rl.envs.absorbing_wrapper import VectorAbsorbingWrapper
+
+        try:
+            env = VectorAbsorbingWrapper(env, absorbing_indicator)
+        except BaseException:
+            env.close()
+            raise
+    return env
 
 
 class TensorVectorEnv(gym.vector.VectorWrapper):

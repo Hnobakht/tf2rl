@@ -28,3 +28,4 @@ dist/*
 .ruff_cache/
 
 .venv-modern/
+MUJOCO_LOG.TXT
