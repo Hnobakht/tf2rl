@@ -23,14 +23,16 @@ def as_warp(value, device):
     else:
         import tensorflow as tf
 
-        # A CPU policy may drive GPU physics. Transfer controls explicitly before
-        # exporting them; GPU policies retain the existing DLPack path.
-        if not value.device.endswith(f"GPU:{device.ordinal}"):
+        # Inspect the backing allocation, not Tensor.device: tf.function can
+        # label a CPU result with its GPU caller's device. Copy controls only
+        # when the DLPack payload is actually on a different device.
+        result = wp.from_dlpack(tf.experimental.dlpack.to_dlpack(value))
+        if result.device != device:
             with tf.device(f"/GPU:{device.ordinal}"):
                 value = tf.identity(value)
-        result = wp.from_dlpack(tf.experimental.dlpack.to_dlpack(value))
+            result = wp.from_dlpack(tf.experimental.dlpack.to_dlpack(value))
     if result.device != device or result.dtype != wp.float32:
-        raise ValueError("Actions must be float32 on the simulator's device")
+        raise ValueError(f"Actions must be float32 on {device}; got {result.dtype} on {result.device}")
     return result
 
 

@@ -33,6 +33,7 @@ dev = ["build>=1.2", "ruff>=0.11"]
 [project.scripts]
 eqn-train = "tf2rl.experiments.cli:main"
 ppo-train = "tf2rl.experiments.ppo:main"
+onpolicy-train = "tf2rl.experiments.on_policy:main"
 offpolicy-train = "tf2rl.experiments.off_policy:main"
 
 [tool.setuptools.packages.find]

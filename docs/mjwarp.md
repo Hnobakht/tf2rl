@@ -12,9 +12,11 @@ The implementation has three reusable parts:
 - `MJWarpVectorEnv` adds task adapters for observations, rewards, termination,
   random resets and time limits. Built-in adapters currently cover
   `HalfCheetah-v5` and `InvertedPendulum-v5`.
-- `VectorOnPolicyTrainer` collects tensor rollouts from either backend. PPO uses
-  its existing clipped actor loss and critic update through a tensor interface.
-  Observation and action sizes come from the environment spaces.
+- `VectorOnPolicyTrainer` collects tensor rollouts from either backend through
+  `OnPolicyAgent`'s tensor interface. PPO and VPG retain their own losses and
+  stopping rules. Observation and action sizes come from the environment spaces.
+  See [shared on-policy training](mjwarp-on-policy.md) for algorithm selection,
+  checkpoints, and registration of additional agents.
 - `VectorOffPolicyTrainer` collects into shared replay for SAC, TD3 and DDPG,
   including correct final observations, optional SAC absorbing states and
   complete expert-episode export. See [off-policy usage](mjwarp-off-policy.md).
@@ -111,7 +113,7 @@ activation, free joints, mocap or plugin state must handle those reset fields;
 the built-in scalar-joint reset helper intentionally rejects free joints and
 stateful actuators.
 
-## PPO validation and benchmarking
+## On-policy training and PPO validation
 
 Run from the checkout in the GPU container:
 
@@ -127,9 +129,10 @@ Run from the checkout in the GPU container:
   --env-name HalfCheetah-v5 --iterations 5
 ```
 
-The PPO entry point also accepts other task IDs and `--env-backend gymnasium`.
-It currently supports vector Box observations and uniform symmetric continuous
-action bounds, matching the existing Gaussian PPO actor.
+The common `tf2rl.experiments.on_policy` entry point accepts `--algorithm ppo`
+or `--algorithm vpg`, other task IDs, and `--env-backend gymnasium`. The existing
+PPO entry point delegates to it. It supports vector Box observations, uniform
+symmetric continuous action bounds, and native discrete tasks.
 It saves TensorBoard events, checkpoint files and `metrics.json`, including
 device placement and dependency versions. Its horizon is
 `num_envs * rollout_steps`; the batch size must divide that horizon. A warmup

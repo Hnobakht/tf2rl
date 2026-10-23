@@ -52,6 +52,29 @@ class OnPolicyAgent(Policy):
     Base class for on-policy agents
     """
 
+    def get_action_and_val_tensor(self, states, test=False):
+        """Return batched action, action log probability and state value tensors."""
+        raise NotImplementedError("On-policy vector collection requires tensor inference")
+
+    def get_value_tensor(self, states):
+        """Return state values without assuming a particular network architecture."""
+        return self.get_action_and_val_tensor(states, test=True)[2]
+
+    def initialize_tensor_training(self, states):
+        """Build inference state before tracing the rollout update loop.
+
+        Policies with lazy optimizer slots should also build those in this hook.
+        """
+        self.get_action_and_val_tensor(states)
+
+    def train_tensor(self, states, actions, advantages, logp_olds, returns):
+        """Update one minibatch; return [actor loss, value loss, estimated KL]."""
+        raise NotImplementedError("On-policy vector training requires tensor minibatch updates")
+
+    def should_stop_update(self, diagnostics):
+        """Define an algorithm's rollout stopping rule; the default runs all epochs."""
+        return tf.constant(False)
+
     def __init__(
             self,
             horizon=2048,

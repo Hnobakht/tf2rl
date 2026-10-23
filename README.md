@@ -20,11 +20,13 @@ See [executed experiments and limits](docs/validation.md) and the
 ## Installation
 
 An optional [MuJoCo Warp GPU backend](docs/mjwarp.md) adds batched simulation
-with a reusable environment API. PPO, SAC, TD3 and DDPG can select it with
+with a reusable environment API. PPO, VPG, SAC, TD3 and DDPG can select it with
 `--env-backend mjwarp`; HalfCheetah is the performance validation task.
 [Off-policy training and expert export](docs/mjwarp-off-policy.md) supports CPU
 optimization with GPU simulation, SAC absorbing replay, and trajectories for
 the existing IL/IRL workflows.
+[Shared on-policy training](docs/mjwarp-on-policy.md) selects PPO or VPG through
+one collector and launcher, with an interface for additional on-policy agents.
 
 Use Python 3.10–3.12 and a virtual environment inside the checkout:
 

@@ -20,11 +20,17 @@ class PPO(VPG):
         self.target_kl=target_kl
         assert self.horizon % self.batch_size == 0 , "The horizon % batch_size should be 0. [__init__ PPO]"
 
+    def should_stop_update(self, diagnostics):
+        """PPO stops its rollout update when the estimated KL exceeds its target."""
+        return diagnostics[2] > self.target_kl
+
     @tf.function(reduce_retracing=True)
     def train_tensor(self, states, actions, advantages, logp_olds, returns):
         """Apply PPO losses without transferring minibatch diagnostics to the host."""
         if self.actor_critic is not None:
-            raise NotImplementedError("Tensor updates require separate actor and critic")
+            actor_loss, critic_loss, _, _, _, kl = self._train_actor_critic_body(
+                states, actions, advantages, logp_olds, returns)
+            return tf.stack((actor_loss, critic_loss, kl))
         actor_loss, _, _, _, kl = self._train_actor_body(
             states, actions, advantages, logp_olds)
         critic_loss = self._train_critic_body(states, returns)
@@ -34,7 +40,6 @@ class PPO(VPG):
         # Train actor and critic
         """Update the PPO policy and value function from a rollout batch."""
         if self.actor_critic is not None:
-            raise NotImplemented
             actor_loss, critic_loss, logp_news, ratio, ent, kl = self._train_actor_critic_body(
                 states, actions, advantages, logp_olds, returns)
         else:
@@ -111,6 +116,7 @@ class PPO(VPG):
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 _, _, current_V = self.actor_critic(states)
+                ent = tf.constant(0., tf.float32)
                 if self.entropy_coef > 0.:
                     ent = tf.reduce_mean(
                         self.actor_critic.compute_entropy(states))

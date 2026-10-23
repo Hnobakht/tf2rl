@@ -7,6 +7,8 @@ No task-specific dimensions, rewards or simulation calls belong in this trainer.
 
 import tensorflow as tf
 
+from tf2rl.algos.policy_base import OnPolicyAgent
+
 
 @tf.function(reduce_retracing=True)
 def rollout_targets(
@@ -46,6 +48,8 @@ class VectorOnPolicyTrainer:
     """Train on tensor vector rollouts using an existing on-policy agent."""
 
     def __init__(self, policy, env, rollout_steps, seed=None):
+        if not isinstance(policy, OnPolicyAgent):
+            raise TypeError("Vector on-policy collection requires an OnPolicyAgent")
         self.policy = policy
         self.env = env
         self.rollout_steps = rollout_steps
@@ -54,9 +58,8 @@ class VectorOnPolicyTrainer:
             raise ValueError(
                 "Policy horizon must equal num_envs * rollout_steps and be divisible by batch_size"
             )
-        if policy.actor_critic is not None:
-            raise ValueError("Vector trainer currently requires separate actor and critic")
         self.obs, _ = env.reset(seed=seed)
+        policy.initialize_tensor_training(self.obs)
         self.episode_returns = tf.zeros(env.num_envs, tf.float32)
 
     def collect(self):
@@ -101,7 +104,8 @@ class VectorOnPolicyTrainer:
         actions = tf.reshape(actions, (self.count, *action_shape))
         logps = tf.reshape(logps, (self.count,))
         next_values = tf.reshape(
-            policy.critic(tf.reshape(final_obs, (self.count, *state_shape))), tf.shape(values)
+            policy.get_value_tensor(tf.reshape(final_obs, (self.count, *state_shape))),
+            tf.shape(values),
         )
         advantages, returns = rollout_targets(
             rewards,
@@ -139,5 +143,5 @@ class VectorOnPolicyTrainer:
                         tf.debugging.assert_all_finite(result, "Nonfinite policy losses")
                         diagnostics += result
                         updates += 1
-                        stop = result[2] > getattr(policy, "target_kl", float("inf"))
+                        stop = policy.should_stop_update(result)
         return diagnostics / tf.cast(updates, tf.float32), updates

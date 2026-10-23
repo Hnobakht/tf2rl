@@ -64,7 +64,7 @@ class CategoricalActor(tf.keras.Model):
             action = tf.argmax(dist.logits, axis=1)  # (size,)
         else:
             action = dist.sample()  # (size,)
-        log_prob = dist.prob(action)
+        log_prob = dist.log_prob(action)
 
         return action, log_prob
 

@@ -1,4 +1,4 @@
-"""Compare environment backends using the same PPO configuration and update count."""
+"""Compare vector backends using the same selected on-policy algorithm and update count."""
 
 import argparse
 import json
@@ -10,13 +10,16 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-name", required=True)
+    parser.add_argument("--algorithm", choices=("ppo", "vpg"), default="ppo")
     parser.add_argument("--num-envs", nargs="+", type=int, default=[1, 64, 256, 1024])
     parser.add_argument("--iterations", type=int, default=5)
     parser.add_argument("--rollout-steps", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=4)
+    parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--output", type=Path, default=Path("results/mjwarp/benchmark"))
     args = parser.parse_args()
+    if args.epochs is None:
+        args.epochs = 4 if args.algorithm == "ppo" else 1
     args.output.mkdir(parents=True, exist_ok=True)
     rows = []
     for count in args.num_envs:
@@ -30,7 +33,9 @@ def main():
             command = [
                 sys.executable,
                 "-m",
-                "tf2rl.experiments.ppo",
+                "tf2rl.experiments.on_policy",
+                "--algorithm",
+                args.algorithm,
                 "--env-name",
                 args.env_name,
                 "--env-backend",
@@ -47,13 +52,13 @@ def main():
                 str(args.epochs),
                 "--iterations",
                 str(args.iterations),
-                "--target-kl",
-                "1000000000",
                 "--eval-episodes",
                 "0",
                 "--output",
                 str(output),
             ]
+            if args.algorithm == "ppo":
+                command.extend(["--target-kl", "1000000000"])
             print(f"Running {backend}, {count} environments", flush=True)
             log_path = args.output / f"{backend}_{count}.log"
             with log_path.open("w") as log:

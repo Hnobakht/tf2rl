@@ -123,7 +123,6 @@ class VPG(OnPolicyAgent):
 
         return action.numpy(), logp.numpy(), v.numpy()
 
-    @tf.function(reduce_retracing=True)
     def get_action_and_val_tensor(self, states, test=False):
         """Return batched on-policy inference tensors on the configured device."""
         with tf.device(self.device):
@@ -132,7 +131,7 @@ class VPG(OnPolicyAgent):
     @tf.function
     def _get_action_logp_v_body(self, state, test):
         """Return sampled actions, their log probabilities, and state-value estimates."""
-        if self.actor_critic:
+        if self.actor_critic is not None:
             return self.actor_critic(state, test=test)
         else:
             action, logp = self.actor(state, test=test)
@@ -143,14 +142,66 @@ class VPG(OnPolicyAgent):
     def _get_action_body(self, state, test):
         """Return batched policy actions and log probabilities on the configured device."""
         if self.actor_critic is not None:
-            action, logp = self.actor_critic(state, test=test)
+            action, logp, _ = self.actor_critic(state, test=test)
             return action, logp
         else:
             return self.actor(state, test=test)
 
+    def initialize_tensor_training(self, states):
+        """Build actor/value networks and optimizer slots on the learner device."""
+        with tf.device(self.device):
+            self.get_action_and_val_tensor(states)
+            if self.actor_critic is not None:
+                self.actor_critic_optimizer.build(self.actor_critic.trainable_variables)
+            else:
+                self.actor_optimizer.build(self.actor.trainable_variables)
+                self.critic_optimizer.build(self.critic.trainable_variables)
+
+    def get_value_tensor(self, states):
+        """Evaluate the baseline for separate or shared actor/value networks."""
+        with tf.device(self.device):
+            return self._get_value_body(states)
+
+    @tf.function(reduce_retracing=True)
+    def _get_value_body(self, states):
+        if self.actor_critic is not None:
+            return self.actor_critic(states, test=True)[2]
+        return self.critic(states)
+
+    @tf.function(reduce_retracing=True)
+    def train_tensor(self, states, actions, advantages, logp_olds, returns):
+        """Apply vanilla policy gradients and value regression without host copies."""
+        with tf.device(self.device):
+            if self.actor_critic is not None:
+                return self._train_shared_body(states, actions, advantages, logp_olds, returns)
+            actor_loss, logp_news = self._train_actor_body(states, actions, advantages, logp_olds)
+            critic_loss = self._train_critic_body(states, returns)
+            kl = tf.reduce_mean(tf.reshape(logp_olds, (-1,)) - logp_news)
+            return tf.stack((actor_loss, critic_loss, kl))
+
+    def _train_shared_body(self, states, actions, advantages, logp_olds, returns):
+        """Apply the VPG and value losses to a shared actor-critic model."""
+        with tf.GradientTape() as tape:
+            logp = self.actor_critic.compute_log_probs(states, actions)
+            values = self.actor_critic(states, test=True)[2]
+            actor_loss = -tf.reduce_mean(logp * tf.stop_gradient(tf.reshape(advantages, (-1,))))
+            critic_loss = tf.reduce_mean(tf.square(tf.reshape(returns, (-1,)) - values))
+            loss = actor_loss + self.vfunc_coef * critic_loss
+        variables = self.actor_critic.trainable_variables
+        self.actor_critic_optimizer.apply_gradients(zip(tape.gradient(loss, variables), variables))
+        kl = tf.reduce_mean(tf.reshape(logp_olds, (-1,)) - logp)
+        return tf.stack((actor_loss, critic_loss, kl))
+
     def train(self, states, actions, advantages, logp_olds, returns):
         # Train actor and critic
         """Update the policy and value function from sampled returns and advantages."""
+        if self.actor_critic is not None:
+            actor_loss, critic_loss, kl = tf.unstack(
+                self.train_tensor(states, actions, advantages, logp_olds, returns))
+            tf.summary.scalar(self.policy_name + "/actor_loss", actor_loss)
+            tf.summary.scalar(self.policy_name + "/critic_loss", critic_loss)
+            tf.summary.scalar(self.policy_name + "/kl", kl)
+            return actor_loss, critic_loss
         actor_loss, logp_news = self._train_actor_body(
             states, actions, advantages, logp_olds)
         critic_loss = self._train_critic_body(states, returns)
