@@ -5,7 +5,14 @@ from tf2rl.algos.vpg import VPG
 
 
 class PPO(VPG):
-    """Proximal policy optimization with clipped likelihood-ratio updates."""
+    """PPO with ``L = -E[min(r*A, clip(r,1-eps,1+eps)*A)]``.
+
+    Here ``r=exp(logpi_new-logpi_old)`` and rollout advantages are held fixed.
+    Clipping limits the surrogate incentive; it does not enforce a hard KL
+    constraint. The sample mean ``logpi_old-logpi_new`` is a noisy estimate of
+    forward KL and can be negative on finite batches. See Schulman et al.
+    (2017), https://arxiv.org/abs/1707.06347.
+    """
     def __init__(
             self,
             clip=True,
@@ -74,7 +81,7 @@ class PPO(VPG):
         """Update the PPO policy from observations, actions, advantages, and old log probabilities.
         """
         if self.actor_critic is not None:
-            raise NotImplemented
+            raise NotImplementedError("Shared actor-critic requires a joint train() update")
         else:
             actor_loss, logp_news, ratio, ent, kl = self._train_actor_body(
                 states, actions, advantages, logp_olds)
@@ -103,7 +110,7 @@ class PPO(VPG):
         # Train actor and critic
         """Update the value function against the supplied return targets."""
         if self.actor_critic is not None:
-            raise NotImplemented
+            raise NotImplementedError("Shared actor-critic requires a joint train() update")
         else:
             critic_loss = self._train_critic_body(states, returns)
         # Visualize results in TensorBoard

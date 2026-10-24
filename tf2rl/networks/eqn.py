@@ -40,7 +40,18 @@ class _EquationParameters(tf.keras.layers.Layer):
 
 
 class EquationLayer(_EquationParameters):
-    """Affine features followed by configurable unary and binary equation operators."""
+    """Apply an operator dictionary to affine features ``z = xW+b``.
+
+    With all operators enabled, each repetition consumes nine affine columns
+    and emits seven features. ``mult(a,b)=(a+b)^2`` is the historical squared
+    binomial, not ordinary multiplication. Log/division use a 0.1 relaxation;
+    their domain penalty instead uses a 0.001 threshold. Neither constant is
+    a physical unit conversion, so input scaling affects the learned equation.
+
+    Related equation-learning methodology: Sahoo et al. (2018),
+    https://proceedings.mlr.press/v80/sahoo18a.html. This operator dictionary
+    is repository-specific and is not an exact EQL-division implementation.
+    """
     OPERATORS = (("id", 1), ("sin", 1), ("cos", 1), ("sig", 1),
                  ("log", 1), ("mult", 2), ("div", 2))
 
@@ -98,6 +109,8 @@ class EquationLayer(_EquationParameters):
                 elif operator == "sig":
                     value = tf.sigmoid(a)
                 elif operator == "log":
+                    # ReLU makes evaluation finite; the separate penalty supplies
+                    # a restoring gradient for negative, otherwise flat inputs.
                     value = tf.math.log(tf.maximum(a, 0.0) + 0.1)
                     penalties.append(tf.reduce_sum(tf.nn.relu(0.001 - a)))
                 else:
@@ -236,7 +249,12 @@ class EquationNetwork(tf.keras.Model):
                          for value in layer.effective_parameters()])
 
     def prepare_update(self):
-        """Advance stages using completed discriminator updates, including after restore."""
+        """Select warmup, L1 fitting, or fixed-support fitting before an update.
+
+        Boundaries count completed discriminator optimizer steps, not physical
+        environment steps. The final phase prunes once, removes L1 shrinkage,
+        and refits surviving coefficients; masks and counters are checkpointed.
+        """
         if not self.sparse:
             return
         start, end = self.sparsity_boundaries.numpy()

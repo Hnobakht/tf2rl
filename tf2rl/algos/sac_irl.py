@@ -8,14 +8,30 @@ from tf2rl.policies.tfp_gaussian_actor import GaussianActor
 
 
 def dac_target(rewards, masks, next_q, next_logp, alpha, discount, absorbing):
-    """Return SAC targets using DAC masks for continuing, terminal, and absorbing transitions."""
+    """Return soft Bellman targets for aligned rank-one transition tensors.
+
+    Let ``c=max(mask,0)`` for masks {continuing: 1, terminal: 0, loop: -1}.
+    Absorbing mode uses ``y=r+gamma*(Q_next-alpha*c*logp_next)``; conventional
+    mode uses ``y=r+gamma*c*(Q_next-alpha*logp_next)``. The caller must evaluate
+    ``Q_next`` at zero action on terminal/loop rows in absorbing mode.
+
+    Bootstrapping the learned absorbing reward avoids imposing a zero terminal
+    reward: a stationary loop has ``Q_abs=r_abs/(1-gamma)``. See Kostrikov
+    et al. (2019), https://arxiv.org/abs/1809.02925. Inputs must have matching
+    shapes to avoid accidental batch-by-batch broadcasting.
+    """
     continuation = tf.maximum(masks, 0.)
     soft_q = next_q - alpha * next_logp * (continuation if absorbing else 1.)
     return rewards + discount * soft_q * (1. if absorbing else continuation)
 
 
 def dac_actor_loss(logp, q, masks, alpha, absorbing):
-    """Return the SAC actor objective, excluding absorbing self-loops when enabled."""
+    """Average ``alpha*logp-Q`` over physical rows, excluding absorbing loops.
+
+    Terminal physical actions still receive policy gradients (mask zero).
+    A batch of only synthetic loops yields zero; the caller also skips Adam
+    so stored momentum cannot move policy weights without physical samples.
+    """
     values = alpha * logp - q
     if not absorbing:
         return tf.reduce_mean(values)

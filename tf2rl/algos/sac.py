@@ -70,7 +70,15 @@ class CriticQ_pixels(tf.keras.Model):
 
 
 class SAC(OffPolicyAgent):
-    """Soft actor-critic with stochastic actions, twin Q networks, and entropy regularization."""
+    """Twin-Q soft actor-critic with an optional learned entropy temperature.
+
+    Critic targets are ``y=r+gamma*(1-d)*(min(Q1',Q2')-alpha*logpi(a'|s'))``;
+    the reparameterized actor minimizes ``E[alpha*logpi(a|s)-min(Q1,Q2)]``.
+    Here ``d`` means true termination, not time-limit truncation or a DAC mask.
+    This follows the no-value-network SAC formulation of Haarnoja et al.,
+    https://arxiv.org/abs/1812.05905, with repository-specific normalization
+    and initialization. SAC_IRL separately implements the absorbing targets.
+    """
     def     __init__(
             self,
             state_shape,
@@ -181,11 +189,14 @@ class SAC(OffPolicyAgent):
         return actions, log_pis
 
     def train(self, states, actions, next_states, rewards, dones, weights=None):
+        """Update from uniform one-step replay and return the sampled Bellman targets.
+
+        The historical return value is ``y``, not a TD residual; use
+        ``compute_td_error`` for residuals. Rewards and done flags are ``(B,1)``.
+        Non-unit importance weights are unsupported by this research objective.
         """
-        Update the actor and critics from a replay minibatch and return temporal-difference errors.
-        """
-        if weights is None:
-            weights = np.ones_like(rewards)
+        if weights is not None and not np.allclose(weights, 1):
+            raise NotImplementedError("SAC does not implement importance-weighted losses")
 
         with tf.device(self.device):
             states, actions, next_states, rewards, dones = \
@@ -236,7 +247,7 @@ class SAC(OffPolicyAgent):
                 td_loss_q2 = tf.reduce_mean((target_q - current_q2) ** 2)  # Eq.(7)
                 td_loss_q = td_loss_q1 + td_loss_q2
 
-                sample_actions, logp = self.actor(states, training=True)  # Resample actions to update V
+                sample_actions, logp = self.actor(states, training=True)  # Reparameterized actor sample.
                 current_q1_policy = self.qf1(states, sample_actions, training=False)
                 current_q2_policy = self.qf2(states, sample_actions, training=False)
                 current_min_q_policy = tf.minimum(current_q1_policy, current_q2_policy)
@@ -292,7 +303,7 @@ class SAC(OffPolicyAgent):
             return tf.stop_gradient(target) - self.qf1(states, actions, training=False)
 
     def get_logp(self, state):
-        """Return policy log probabilities for the supplied states and actions."""
+        """Sample fresh policy actions and return their log densities at these states."""
         assert isinstance(state, np.ndarray)
         is_single_state = len(state.shape) == self.state_ndim
 

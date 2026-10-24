@@ -19,6 +19,16 @@ def rollout_targets(
     Truncations bootstrap their final observation; true terminations bootstrap
     zero. Both stop recursion so returns never leak into an autoreset episode.
     The final rollout step bootstraps even if no episode boundary was reached.
+
+    All inputs have shape ``(time, worlds)``. With ``b=1-terminated`` and
+    ``c=1-(terminated or truncated)``, the TD residual is
+    ``delta_t=r_t+gamma*b_t*V(next_t)-V_t`` and GAE obeys
+    ``A_t=delta_t+gamma*lambda*c_t*A_(t+1)``. ``next_values`` must use physical
+    final observations, never reset observations. See Schulman et al. (2016),
+    https://arxiv.org/abs/1506.02438.
+
+    Value regression uses bootstrapped discounted rewards-to-go, not ``A+V``;
+    these differ for lambda < 1. Disabling GAE selects one-step TD advantages.
     """
     bootstrap = (1.0 - tf.cast(terminated, tf.float32)) * next_values
     boundary = tf.logical_or(terminated, truncated)

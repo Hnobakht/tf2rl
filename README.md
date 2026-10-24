@@ -16,6 +16,9 @@ working training, evaluation, checkpoint and TensorBoard paths. Unit-test suites
 were removed in the 2026-10-16 cleanup; executable experiment smoke workflows remain.
 See [executed experiments and limits](docs/validation.md) and the
 [cleanup record](docs/cleanup.md). Broader experimental algorithms remain unverified.
+The [2026-10-24 research review](docs/research-audit.md) documents the mathematical
+conventions, small correctness repairs, and fresh CPU/GPU validation scope, with
+references for PhD researchers extending the methods.
 
 ## Installation
 

@@ -62,6 +62,9 @@ class IRLTrainer(Trainer):
                       "agent_next_states": samples["next_obs"], "expert_states": expert["obs"],
                       "expert_acts": expert["act"], "expert_next_states": expert["next_obs"], "itr": itr}
         if self._irl.requires_log_probs:
+            # Historical off-policy AIRL uses collection-time densities, not
+            # current-generator densities. Warmup logps are fresh-action samples;
+            # they need not describe the uniform action executed in the world.
             kwargs.update(agent_logps=samples["logp"], expert_logps=expert["logp"])
         return kwargs
 

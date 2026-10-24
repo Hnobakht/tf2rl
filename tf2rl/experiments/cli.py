@@ -39,7 +39,7 @@ def build_parser(algorithm=None):
         action="store_true",
         help="Run TensorFlow functions eagerly for Python breakpoints (slower)",
     )
-    parser.set_defaults(units_ail=None, memory_capacity=2_000_000)
+    parser.set_defaults(units_ail=None, memory_capacity=2_000_000, update_delay=None)
     return parser
 
 

@@ -21,6 +21,8 @@ class OnPolicyTrainer(Trainer):
     def __call__(self):
         # Prepare buffer
         """Run the training loop, including data collection, policy updates, and evaluation."""
+        if self._evaluate:
+            return self.evaluate_policy_continuously()
         self.replay_buffer = get_replay_buffer(
             self._policy, self._env)
         kwargs_local_buf = get_default_rb_dict(
@@ -123,15 +125,16 @@ class OnPolicyTrainer(Trainer):
                         for idx in range(int(self._policy.horizon / self._policy.batch_size)):
                             target = slice(idx * self._policy.batch_size,
                                            (idx + 1) * self._policy.batch_size)
-                            _, _, kl = self._policy.train(
+                            diagnostics = self._policy.train(
                                             states=samples["obs"][target],
                                             actions=samples["act"][target],
                                             advantages=adv[target],
                                             logp_olds=samples["logp"][target],
                                             returns=samples["ret"][target])
-                            if (kl > self._policy.target_kl).any():
-                                print("[DEBUG] The KL ({}) has reached the limit at batch: {} and  epoch: {}."
-                                      .format(kl.mean(), idx, idx_epoch))
+                            # VPG returns two losses and has no KL stopping rule;
+                            # PPO adds its KL diagnostic and owns the threshold.
+                            br = bool(self._policy.should_stop_update(diagnostics))
+                            if br:
                                 break
                     # for idx_critic in range(int(self._policy.horizon / self._policy.batch_size)):
                     #     target = slice(idx_critic * self._policy.batch_size,
@@ -140,7 +143,7 @@ class OnPolicyTrainer(Trainer):
                     #                     states=samples["obs"][target],
                     #                     returns=samples["ret"][target])
                     # TODO: Should i continue with this epoch after the kl pass the target?
-                    if (kl > self._policy.target_kl).any():
+                    if br:
                         break
 
         tf.summary.flush()

@@ -57,12 +57,15 @@ def make_discriminator(args, env):
         "lr": args.lr_ail,
         "n_training": args.n_training,
         "is_debug": args.is_debug,
+        # Preserve historical effective defaults while honoring explicit delays
+        # for dense models too (their CLI value used to be silently discarded).
+        "update_delay": (args.update_delay if args.update_delay is not None
+                         else (3 if args.algorithm.startswith("eqn-") else 1)),
     }
     eql = {
         "v": _csv(args.v, int),
         "num_layers": len(args.v.split(",")),
         "drop_out": _csv(args.dropout, float),
-        "update_delay": args.update_delay,
         "exclude": [item.split("-") if item else [] for item in args.exclude.split(",")]
         if args.exclude
         else None,

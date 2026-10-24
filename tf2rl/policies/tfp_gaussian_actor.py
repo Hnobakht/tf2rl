@@ -3,9 +3,17 @@ import tensorflow_probability as tfp
 
 
 class GaussianActor(tf.keras.Model):
-    """Diagonal Gaussian action policy with optional squashing and action scaling."""
+    """Diagonal Gaussian with optional ``a = max_action * tanh(u)`` transform.
+
+    ``u = mean(s) + exp(log_std(s))*epsilon`` is reparameterized for SAC.
+    Returned log densities include the tanh Jacobian but historically omit
+    ``sum(log(abs(max_action)))``. They are densities in normalized action
+    coordinates, not environment coordinates when the scale differs from one.
+    Retain this convention when comparing entropy targets and AIRL datasets.
+    See Haarnoja et al. (2018), https://arxiv.org/abs/1801.01290, Appendix C.
+    """
     LOG_STD_CAP_MAX = 2  # np.e**2 = 7.389
-    LOG_STD_CAP_MIN = -20  # np.e**-10 = 4.540e-05
+    LOG_STD_CAP_MIN = -20  # exp(-20) = 2.061e-9
     EPS = 1e-6
 
     def __init__(self, state_shape, action_dim, max_action, units=(256, 256),
@@ -84,6 +92,7 @@ class GaussianActor(tf.keras.Model):
 
         if self._squash:
             actions = tf.tanh(raw_actions)
+            # log pi(tanh u|s) = log N(u|s) - sum log(1 - tanh(u)^2).
             diff = tf.reduce_sum(tf.math.log(1 - actions ** 2 + self.EPS), axis=1)
             log_pis -= diff
         else:
@@ -93,8 +102,11 @@ class GaussianActor(tf.keras.Model):
         return actions, log_pis
 
     def compute_log_probs(self, states, actions):
-        """
-        Return log probabilities of supplied actions, accounting for scaling and optional squashing.
+        """Evaluate supplied actions using the same density convention as ``call``.
+
+        Divide out the action scale and invert tanh when enabled. Clipping
+        makes the inverse finite at numerical saturation; the density there is
+        an approximation. The constant scale Jacobian remains omitted.
         """
         raw_actions = actions / self._max_action
         dist = self._compute_dist(states)
@@ -106,13 +118,17 @@ class GaussianActor(tf.keras.Model):
         return dist.log_prob(raw_actions)
 
     def compute_entropy(self, states):
-        """Return the action distribution entropy for each observation."""
+        """Return latent Gaussian entropy, before tanh or action scaling.
+
+        This analytic quantity is not the entropy of a squashed policy; SAC
+        instead uses sampled, Jacobian-corrected log densities in its loss.
+        """
         return self._compute_dist(states).entropy()
 
 class GaussianActor_pixels(tf.keras.Model):
     """Gaussian continuous-action policy with convolutional image features."""
     LOG_STD_CAP_MAX = 2  # np.e**2 = 7.389
-    LOG_STD_CAP_MIN = -20  # np.e**-10 = 4.540e-05
+    LOG_STD_CAP_MIN = -20  # exp(-20) = 2.061e-9
     EPS = 1e-6
 
     def __init__(self, state_shape, action_dim, max_action, units=(256, 256),

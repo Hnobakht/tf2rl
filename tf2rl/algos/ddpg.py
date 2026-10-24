@@ -158,7 +158,8 @@ class DDPG(OffPolicyAgent):
             with tf.GradientTape() as tape:
                 td_errors = self._compute_td_error_body(
                     states, actions, next_states, rewards, dones)
-                critic_loss = tf.reduce_mean(td_errors ** 2)
+                # Flatten (B,1) replay weights to avoid broadcasting to (B,B).
+                critic_loss = tf.reduce_mean(td_errors ** 2 * tf.reshape(weights, (-1,)))
 
             critic_grad = tape.gradient(
                 critic_loss, self.critic.trainable_variables)

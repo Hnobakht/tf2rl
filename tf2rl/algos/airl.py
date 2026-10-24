@@ -38,7 +38,14 @@ class StateModel(tf.keras.Model):
 
 
 class AIRL(IRLPolicy):
-    """Adversarial inverse reinforcement learning with separate reward and shaping networks."""
+    """Learn a reward and potential using the AIRL discriminator factorization.
+
+    ``f(s,a,s') = r(s,a) + gamma*V(s') - V(s)`` separates a reward candidate
+    from potential-based shaping (Fu et al., https://arxiv.org/abs/1710.11248).
+    Inference returns ``r`` alone. State-only parameterization supports the
+    paper's transfer motivation, but does not itself guarantee identifiability
+    or recovery of a physical reward, especially with stored policy densities.
+    """
     requires_log_probs = True
     equation_reward = False
 
@@ -105,6 +112,8 @@ class AIRL(IRLPolicy):
                 real_next_values = self.val_net(expert_next_states)
                 fake_values = self.val_net(agent_states)
                 fake_next_values = self.val_net(agent_next_states)
+                # Terminal rows already point to the explicit absorbing state;
+                # do not add a boolean terminal mask to this shaping difference.
                 real_f = real_rewards + self.discount * real_next_values - real_values
                 fake_f = fake_rewards + self.discount * fake_next_values - fake_values
                 loss = airl_loss(real_f, fake_f, expert_logps, agent_logps)

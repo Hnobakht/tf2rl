@@ -81,6 +81,33 @@ though the paper discusses nonzero GP. No paper formula is silently substituted.
 
 ## Behavior repairs that are not merely structural
 
+### Research review, 2026-10-24
+
+The [research review](research-audit.md) adds equation-level docstrings and records
+fresh CPU/container validation. Its small execution repairs are:
+
+- Dense AIRL/GAIL now honor explicit `--update-delay`. Omitted values retain the
+  effective historical defaults: one for dense models and three for EQN models.
+  The shared CLI/Hydra default is now null until the algorithm factory resolves it.
+- DDPG critic regression now applies supplied replay importance weights as
+  `mean(weight * TD_error**2)`, flattening them to prevent `(B,B)` broadcasting.
+  Unit-weight/default training is unchanged. SAC rejects non-unit weights because
+  its retained objective has no implemented importance correction.
+- The retained `OnPolicyTrainer` accepts VPG's two-loss result and delegates
+  stopping to the policy, instead of unconditionally unpacking PPO's third KL
+  value. Evaluation mode now returns evaluation without starting training.
+- Unsupported split updates of a shared PPO actor-critic raise
+  `NotImplementedError`; previously `raise NotImplemented` raised a `TypeError`.
+- The unused `CNN_model` helper now returns its ordered convolutional/dense layer
+  list and accepts activation/initializer options; previously it referenced three
+  undefined names and could not be called.
+
+The remaining additions describe existing mathematics without changing objectives,
+operator formulas, action-density conventions, or sparsity schedules. No tests
+were added. The earlier repairs below remain a historical record.
+
+### Earlier modernization
+
 These fixes affect broken or ambiguous executions and can change numerical results:
 
 1. Models are built before target synchronization and before gradient selection.
