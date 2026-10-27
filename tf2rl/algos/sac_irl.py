@@ -3,41 +3,11 @@ import numpy as np
 import tensorflow as tf
 
 from tf2rl.algos.policy_base import OffPolicyAgent
+from tf2rl.misc.absorbing_ops import ReplaySemantics
+from tf2rl.misc.absorbing_ops import dac_actor_loss as dac_actor_loss  # Compatibility export.
+from tf2rl.misc.absorbing_ops import dac_target as dac_target
 from tf2rl.misc.target_update_ops import update_target_variables
 from tf2rl.policies.tfp_gaussian_actor import GaussianActor
-
-
-def dac_target(rewards, masks, next_q, next_logp, alpha, discount, absorbing):
-    """Return soft Bellman targets for aligned rank-one transition tensors.
-
-    Let ``c=max(mask,0)`` for masks {continuing: 1, terminal: 0, loop: -1}.
-    Absorbing mode uses ``y=r+gamma*(Q_next-alpha*c*logp_next)``; conventional
-    mode uses ``y=r+gamma*c*(Q_next-alpha*logp_next)``. The caller must evaluate
-    ``Q_next`` at zero action on terminal/loop rows in absorbing mode.
-
-    Bootstrapping the learned absorbing reward avoids imposing a zero terminal
-    reward: a stationary loop has ``Q_abs=r_abs/(1-gamma)``. See Kostrikov
-    et al. (2019), https://arxiv.org/abs/1809.02925. Inputs must have matching
-    shapes to avoid accidental batch-by-batch broadcasting.
-    """
-    continuation = tf.maximum(masks, 0.)
-    soft_q = next_q - alpha * next_logp * (continuation if absorbing else 1.)
-    return rewards + discount * soft_q * (1. if absorbing else continuation)
-
-
-def dac_actor_loss(logp, q, masks, alpha, absorbing):
-    """Average ``alpha*logp-Q`` over physical rows, excluding absorbing loops.
-
-    Terminal physical actions still receive policy gradients (mask zero).
-    A batch of only synthetic loops yields zero; the caller also skips Adam
-    so stored momentum cannot move policy weights without physical samples.
-    """
-    values = alpha * logp - q
-    if not absorbing:
-        return tf.reduce_mean(values)
-    actor_mask = 1. - tf.maximum(-masks, 0.)
-    # A batch consisting solely of self-loops has no actor objective.
-    return tf.math.divide_no_nan(tf.reduce_sum(values * actor_mask), tf.reduce_sum(actor_mask))
 
 
 class CriticQ(tf.keras.Model):
@@ -75,6 +45,7 @@ class SAC_IRL(OffPolicyAgent):
         if len(state_shape) != 1:
             raise ValueError("SAC_IRL supports vector observations")
         self._is_absorbed_state = is_absorbed_state
+        self._replay = ReplaySemantics(is_absorbed_state, "dac")
         self._is_debug = is_debug
         self.state_ndim = len(state_shape)
         self.tau = tau
@@ -169,12 +140,11 @@ class SAC_IRL(OffPolicyAgent):
     def _target(self, next_states, rewards, masks):
         """Compute stopped-gradient SAC targets using the three-valued DAC masks."""
         next_actions, next_logp = self.actor(next_states)
-        if self._is_absorbed_state:
-            next_actions *= tf.maximum(masks, 0.)[:, None]
+        next_actions = self._replay.next_actions(next_actions, masks)
         next_q = tf.minimum(self.qf1_target(next_states, next_actions),
                             self.qf2_target(next_states, next_actions))
-        return tf.stop_gradient(dac_target(rewards, masks, next_q, next_logp, self.alpha,
-                                           self.discount, self._is_absorbed_state))
+        return tf.stop_gradient(self._replay.target(
+            rewards, next_q, masks, self.discount, entropy=self.alpha * next_logp))
 
     def _train_body(self, states, actions, next_states, rewards, dones):
         """Apply actor and critic gradient updates, update target networks, and return diagnostics.
@@ -190,7 +160,7 @@ class SAC_IRL(OffPolicyAgent):
                 critic_loss = loss1 + loss2
                 sample_actions, logp = self.actor(states)
                 q_policy = tf.minimum(self.qf1(states, sample_actions), self.qf2(states, sample_actions))
-                actor_loss = dac_actor_loss(logp, q_policy, masks, self.alpha, self._is_absorbed_state)
+                actor_loss = self._replay.actor_mean(self.alpha * logp - q_policy, masks)
                 if self.auto_alpha:
                     alpha_loss = -tf.reduce_mean(self.log_alpha * tf.stop_gradient(logp + self.target_alpha))
             variables = self.qf1.trainable_variables + self.qf2.trainable_variables
@@ -198,7 +168,7 @@ class SAC_IRL(OffPolicyAgent):
             update_target_variables(self.qf1_target.weights, self.qf1.weights, tau=self.tau)
             update_target_variables(self.qf2_target.weights, self.qf2.weights, tau=self.tau)
             # Skip Adam's momentum update as well when there is no actor sample.
-            if not self._is_absorbed_state or tf.reduce_any(masks >= 0):
+            if self._replay.has_actor_samples(masks):
                 variables = self.actor.trainable_variables
                 self.actor_optimizer.apply_gradients(zip(tape.gradient(actor_loss, variables), variables))
             if self.auto_alpha:

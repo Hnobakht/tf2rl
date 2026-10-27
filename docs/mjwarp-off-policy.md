@@ -96,7 +96,8 @@ validation probe, whereas GPU XLA substantially reduced update time.
 
 ## Absorbing states
 
-Add `--absorbing` to SAC training to select the existing DAC-aware SAC targets.
+Add `--absorbing` to SAC, TD3 or DDPG training to enable shared DAC absorbing-state
+semantics. The feature is disabled by default.
 Normal observations gain a zero indicator; the absorbing observation is
 `[0, ..., 0.1]` by default (`--absorbing-indicator` changes it). This works with
 both vector backends.
@@ -109,12 +110,14 @@ both vector backends.
 
 Exactly one loop is inserted per true terminal transition. A simultaneous
 termination and timeout is terminal. Synthetic loops do not increase environment
-steps, episode lengths or update budgets. The existing DAC target suppresses
-next-state entropy at terminals/loops and excludes loops from actor updates.
-Ordinary SAC, TD3 and DDPG receive boolean termination flags instead of DAC masks.
-DAC training is currently supported by SAC; `--absorbing` with TD3/DDPG is
-rejected. Their ordinary exports can still be augmented for DAC imitation learning
-by the expert loader.
+steps, episode lengths or update budgets. All three algorithms bootstrap terminal
+and loop rows at zero action, and exclude loops from actor updates. TD3 applies
+the zero-action rule after target smoothing. SAC also suppresses next-state
+entropy at terminals/loops. Ordinary SAC, TD3 and DDPG receive boolean termination
+flags instead of DAC masks. The shared implementation is
+`tf2rl/misc/absorbing_ops.py`; direct policy constructors enable it with
+`is_absorbed_state=True`. Their exports can be augmented for DAC imitation
+learning by the expert loader.
 
 ## Export from a checkpoint
 

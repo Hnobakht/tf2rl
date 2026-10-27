@@ -60,7 +60,7 @@ class VectorOffPolicyTrainer:
             raise ValueError("Unsupported replay mask encoding")
         if absorbing and (self.mask_encoding != "dac" or not hasattr(env, "get_absorbing_state")):
             raise ValueError(
-                "Absorbing replay needs an absorbing vector wrapper and DAC-aware policy"
+                "Absorbing-state training needs an absorbing vector wrapper and DAC-aware policy"
             )
         if bool(getattr(policy, "_is_absorbed_state", False)) != absorbing:
             raise ValueError("Collector absorbing mode must match the policy's target semantics")

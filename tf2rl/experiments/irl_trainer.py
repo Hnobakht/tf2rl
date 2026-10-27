@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-from tf2rl.algos.sac_irl import SAC_IRL
+from tf2rl.algos.policy_base import OffPolicyAgent
 from tf2rl.experiments.expert_sampling import ExpertSampler
 from tf2rl.experiments.trainer import Trainer, with_summary_writer
 from tf2rl.misc.dac_ops import dac_transitions
@@ -19,10 +19,14 @@ class IRLTrainer(Trainer):
         self._export_equation_enabled = getattr(args, "export_equation", False)
         if is_perb_rew or is_short_memory:
             raise NotImplementedError("Perturbed rewards and short-memory modes were never implemented")
-        if not isinstance(policy, SAC_IRL):
-            raise TypeError("The DAC trainer requires the research SAC_IRL generator")
-        if policy._is_absorbed_state != is_episodic:
-            raise ValueError("Collector absorbing mode must match SAC_IRL target mode")
+        if not isinstance(policy, OffPolicyAgent):
+            raise TypeError("The DAC trainer requires an off-policy generator")
+        if bool(getattr(policy, "_is_absorbed_state", False)) != is_episodic:
+            raise ValueError("Collector absorbing mode must match the policy's target mode")
+        if is_episodic and policy.replay_mask_encoding != "dac":
+            raise ValueError("Absorbing-state training requires DAC replay masks")
+        if irl.requires_log_probs and not callable(getattr(policy, "get_logp", None)):
+            raise ValueError("AIRL requires a generator that supplies action log probabilities")
         if random_epoch < 0:
             raise ValueError("random_epoch must be nonnegative")
         super().__init__(policy, env, args, test_env, is_episodic=is_episodic)
@@ -85,14 +89,17 @@ class IRLTrainer(Trainer):
                 action = self._env.action_space.sample()
                 logp = self._policy.get_logp(obs) if self._irl.requires_log_probs else None
             else:
-                action, policy_logp = self._policy.get_action(obs)
-                logp = policy_logp if self._irl.requires_log_probs else None
+                result = self._policy.get_action(obs)
+                action = self._action(result)
+                logp = result[1] if self._irl.requires_log_probs else None
             next_obs, reward, terminated, truncated, _ = self._env.step(action)
             episode_steps += 1
             truncated = truncated or episode_steps >= self._episode_max_steps
             rows = dac_transitions(self._env, obs, action, np.asarray(next_obs, np.float32),
                                     reward, terminated, truncated, absorbing=self._is_episodic, logp=logp)
             for row in rows:
+                if self._policy.replay_mask_encoding == "done":
+                    row["done"] = 1. - row["done"]
                 self.replay_buffer.add(**row)
             # Preserve epoch penalty: physical warmup transitions only, excluding
             # the last warmup step, as in the original IRLTrainer.
@@ -114,11 +121,12 @@ class IRLTrainer(Trainer):
                               and step > self._irl.atol_starting_step)
                 kwargs = {"apply_atol": True} if apply_atol else {}
                 rewards = self._irl.inference(samples["obs"], samples["act"], samples["next_obs"], **kwargs)
+                rewards = tf.reshape(rewards, (-1, 1))
                 with tf.summary.record_if(step % self._save_summary_interval == 0):
-                    tf.summary.scalar("DAC/absorbing_batch_fraction",
-                                      np.mean(samples["done"] < 0))
-                    tf.summary.scalar("DAC/terminal_batch_fraction",
-                                      np.mean(samples["done"] == 0))
+                    masks = (samples["done"] if self._policy.replay_mask_encoding == "dac"
+                             else 1. - samples["done"])
+                    tf.summary.scalar("DAC/absorbing_batch_fraction", np.mean(masks < 0))
+                    tf.summary.scalar("DAC/terminal_batch_fraction", np.mean(masks == 0))
                     tf.summary.scalar("GAIL/learned_reward_mean", tf.reduce_mean(rewards))
                     # Match the existing update order: generator, then discriminator.
                     self._policy.train(samples["obs"], samples["act"], samples["next_obs"],

@@ -8,10 +8,12 @@ import tensorflow as tf
 
 from tf2rl.algos.airl import AIRL
 from tf2rl.algos.airl_eql import AIRL_EQL
+from tf2rl.algos.ddpg import DDPG
 from tf2rl.algos.gail import GAIL
 from tf2rl.algos.gail_eql import GAIL_EQL
 from tf2rl.algos.sac import SAC
 from tf2rl.algos.sac_irl import SAC_IRL
+from tf2rl.algos.td3 import TD3
 from tf2rl.experiments.airl_trainer import AIRLTrainer
 from tf2rl.experiments.demonstrations import restore_latest_n_traj
 from tf2rl.experiments.irl_trainer import IRLTrainer
@@ -24,8 +26,27 @@ def _csv(value, cast):
 
 
 def make_policy(args, env, *, imitation, absorbing):
-    """Build the original SAC/SAC_IRL generator with the launcher defaults."""
+    """Build an off-policy generator; SAC retains the original launcher defaults."""
     units = _csv(args.units, int)
+    generator = getattr(args, "generator", "sac")
+    if generator != "sac":
+        if not imitation:
+            raise ConfigurationError("--generator selects an imitation policy; use offpolicy-train for RL")
+        if args.algorithm in ("airl", "eqn-airl"):
+            raise ConfigurationError("AIRL requires action log probabilities; select --generator sac")
+        if args.xla:
+            raise ConfigurationError("--xla currently supports SAC")
+        policy_class = {"td3": TD3, "ddpg": DDPG}[generator]
+        return policy_class(
+            state_shape=env.observation_space.shape,
+            action_dim=env.action_space.shape[0],
+            max_action=float(env.action_space.high[0]),
+            actor_units=units, critic_units=units, gpu=args.gpu,
+            n_warmup=args.n_warmup, batch_size=args.batch_size,
+            memory_capacity=args.memory_capacity,
+            lr_actor=args.lr, lr_critic=args.lr,
+            is_absorbed_state=absorbing,
+        )
     policy_class = SAC_IRL if imitation else SAC
     absorbing_kwargs = {"is_absorbed_state": absorbing} if imitation else {}
     return policy_class(

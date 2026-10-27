@@ -1,8 +1,9 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, LayerNormalization, Conv2D, MaxPool2D, Flatten
+from tensorflow.keras.layers import Conv2D, Dense, Flatten, LayerNormalization, MaxPool2D
 
 from tf2rl.algos.policy_base import OffPolicyAgent
+from tf2rl.misc.absorbing_ops import ReplaySemantics
 from tf2rl.misc.target_update_ops import update_target_variables
 from tf2rl.policies.tfp_gaussian_actor import GaussianActor, GaussianActor_pixels
 
@@ -74,10 +75,12 @@ class SAC(OffPolicyAgent):
 
     Critic targets are ``y=r+gamma*(1-d)*(min(Q1',Q2')-alpha*logpi(a'|s'))``;
     the reparameterized actor minimizes ``E[alpha*logpi(a|s)-min(Q1,Q2)]``.
-    Here ``d`` means true termination, not time-limit truncation or a DAC mask.
+    By default ``d`` means true termination, not time-limit truncation.
+    ``is_absorbed_state=True`` instead expects DAC masks (1, 0, -1) and
+    bootstraps terminal/self-loop rows at zero action without entropy.
     This follows the no-value-network SAC formulation of Haarnoja et al.,
     https://arxiv.org/abs/1812.05905, with repository-specific normalization
-    and initialization. SAC_IRL separately implements the absorbing targets.
+    and initialization. Optional absorbing targets use shared replay semantics.
     """
     def     __init__(
             self,
@@ -97,10 +100,14 @@ class SAC(OffPolicyAgent):
             memory_capacity=int(2e6),
             is_debug = False,
             is_xla = False,
+            is_absorbed_state=False,
             **kwargs):
         """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(
             name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
+        self._is_absorbed_state = is_absorbed_state
+        self._replay = ReplaySemantics(is_absorbed_state)
+        self.replay_mask_encoding = self._replay.mask_encoding
         self._is_debug = is_debug
         self._is_xla = is_xla
         self._is_pixels = is_pixels
@@ -193,6 +200,7 @@ class SAC(OffPolicyAgent):
 
         The historical return value is ``y``, not a TD residual; use
         ``compute_td_error`` for residuals. Rewards and done flags are ``(B,1)``.
+        With absorbing states enabled, ``dones`` contains DAC masks (1, 0, -1).
         Non-unit importance weights are unsupported by this research objective.
         """
         if weights is not None and not np.allclose(weights, 1):
@@ -228,20 +236,12 @@ class SAC(OffPolicyAgent):
             rewards = tf.squeeze(rewards, axis=1)
             dones = tf.squeeze(dones, axis=1)
 
-            not_dones = 1. - tf.cast(dones, dtype=tf.float32)
-
             with tf.GradientTape(persistent=True) as tape:
                 # Compute loss of critic Q
                 current_q1 = self.qf1(states, actions, training=True)
                 current_q2 = self.qf2(states, actions, training=True)
 
-                sample_next_actions, next_logp = self.actor(next_states, training=False)
-                next_q1_target = self.qf1_target(next_states, sample_next_actions, training=False)
-                next_q2_target = self.qf2_target(next_states, sample_next_actions, training=False)
-                next_q_min_target = tf.minimum(next_q1_target, next_q2_target)
-                soft_next_q = next_q_min_target - self.alpha * next_logp
-
-                target_q = tf.stop_gradient(rewards + not_dones * self.discount * soft_next_q)
+                target_q = self._target(next_states, rewards, dones)
 
                 td_loss_q1 = tf.reduce_mean((target_q - current_q1) ** 2)
                 td_loss_q2 = tf.reduce_mean((target_q - current_q2) ** 2)  # Eq.(7)
@@ -253,7 +253,7 @@ class SAC(OffPolicyAgent):
                 current_min_q_policy = tf.minimum(current_q1_policy, current_q2_policy)
 
                 # Compute loss of policy
-                policy_loss = tf.reduce_mean(self.alpha * logp - current_min_q_policy)  # Eq.(12)
+                policy_loss = self._replay.actor_mean(self.alpha * logp - current_min_q_policy, dones)  # Eq.(12)
 
                 # Compute loss of temperature parameter for entropy
                 if self.auto_alpha:
@@ -266,8 +266,9 @@ class SAC(OffPolicyAgent):
             update_target_variables(self.qf1_target.weights, self.qf1.weights, tau=self.tau)
             update_target_variables(self.qf2_target.weights, self.qf2.weights, tau=self.tau)
 
-            actor_grad = tape.gradient(policy_loss, self.actor.trainable_variables)
-            self.actor_optimizer.apply_gradients(zip(actor_grad, self.actor.trainable_variables))
+            if self._replay.has_actor_samples(dones):
+                actor_grad = tape.gradient(policy_loss, self.actor.trainable_variables)
+                self.actor_optimizer.apply_gradients(zip(actor_grad, self.actor.trainable_variables))
 
             if self.auto_alpha:
                 alpha_grad = tape.gradient(alpha_loss, [self.log_alpha])
@@ -295,12 +296,17 @@ class SAC(OffPolicyAgent):
         """Compute batched temporal-difference errors using the target networks."""
         print("[DEBUG] initializing {_compute_td_error_body}...")
         with tf.device(self.device):
-            masks = 1. - tf.reshape(tf.cast(dones, tf.float32), (-1,))
-            actions_next, logp = self.actor(next_states, training=False)
-            q_next = tf.minimum(self.qf1_target(next_states, actions_next, training=False),
-                                self.qf2_target(next_states, actions_next, training=False))
-            target = tf.reshape(rewards, (-1,)) + masks * self.discount * (q_next - self.alpha * logp)
-            return tf.stop_gradient(target) - self.qf1(states, actions, training=False)
+            target = self._target(next_states, rewards, dones)
+            return target - self.qf1(states, actions, training=False)
+
+    def _target(self, next_states, rewards, dones):
+        """Share target construction between critic training and TD diagnostics."""
+        actions_next, logp = self.actor(next_states, training=False)
+        actions_next = self._replay.next_actions(actions_next, dones)
+        q_next = tf.minimum(self.qf1_target(next_states, actions_next, training=False),
+                            self.qf2_target(next_states, actions_next, training=False))
+        return tf.stop_gradient(self._replay.target(
+            rewards, q_next, dones, self.discount, entropy=self.alpha * logp))
 
     def get_logp(self, state):
         """Sample fresh policy actions and return their log densities at these states."""

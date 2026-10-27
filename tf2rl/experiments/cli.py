@@ -31,6 +31,8 @@ def build_parser(algorithm=None):
         default=algorithm or "eqn-airl",
     )
     parser.add_argument("--env-name", required=True)
+    parser.add_argument("--generator", choices=("sac", "td3", "ddpg"), default="sac",
+                        help="Off-policy generator for imitation learning; AIRL requires SAC")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--absorbing-indicator", type=float, default=0.1)
     parser.add_argument("--irl-model-dir")

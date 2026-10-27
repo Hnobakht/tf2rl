@@ -18,7 +18,7 @@ The implementation has three reusable parts:
   See [shared on-policy training](mjwarp-on-policy.md) for algorithm selection,
   checkpoints, and registration of additional agents.
 - `VectorOffPolicyTrainer` collects into shared replay for SAC, TD3 and DDPG,
-  including correct final observations, optional SAC absorbing states and
+  including correct final observations, optional SAC/TD3/DDPG absorbing states and
   complete expert-episode export. See [off-policy usage](mjwarp-off-policy.md).
 
 Other MuJoCo tasks need a task adapter; unsupported tasks raise an error instead

@@ -58,6 +58,7 @@ args:
   eqn_prune_threshold: 0.001
   export_equation: false
   algorithm: eqn-airl
+  generator: sac
   env_name: ???
   seed: 0
   absorbing_indicator: 0.1

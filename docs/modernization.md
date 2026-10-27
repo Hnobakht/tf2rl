@@ -215,3 +215,24 @@ complete experiment configs or result artifacts were available for paper replica
 See [cleanup.md](cleanup.md) for the subsequent version consolidation and removal
 of unit-test suites on 2026-10-16. The earlier test descriptions in this document
 record historical validation, not a currently shipped test suite.
+
+
+## Optional absorbing-state support across off-policy algorithms
+
+The Bellman target, zero-action successor rule and physical-row actor reduction
+now live in `misc/absorbing_ops.py`, shared by SAC, SAC_IRL, TD3 and DDPG.
+`is_absorbed_state=True` opts ordinary policies into DAC masks; their disabled
+mode still accepts boolean termination flags. SAC_IRL retains DAC masks in both
+modes and re-exports its historical target/actor helpers. SAC's historical alpha
+objective is unchanged. TD3 zeroes absorbing successor actions after smoothing;
+all algorithms skip actor optimizer updates on loop-only batches, including Adam
+momentum updates. Critic updates and target-network schedules remain active.
+
+Both scalar and vector collectors now use policy capabilities instead of SAC
+class checks. The scalar trainer also inserts absorbing loops when the feature
+is enabled. The off-policy CLI accepts `--absorbing` for every supported algorithm,
+while keeping its existing absorbing SAC architecture for checkpoint compatibility.
+GAIL/EQN-GAIL expose `--generator sac|td3|ddpg`; deterministic generators work with
+both absorbing and ordinary targets. AIRL still requires policy log probabilities.
+Observation normalization and N-step returns are rejected for absorbing scalar
+collection because those transformations do not preserve this replay contract.

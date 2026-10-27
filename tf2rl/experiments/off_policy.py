@@ -1,7 +1,7 @@
 """Continuous off-policy training with selectable CPU/MJWarp vector simulation.
 
-SAC, TD3 and DDPG share the collector. SAC's optional absorbing mode uses the
-existing DAC-aware SAC generator and exactly the same masks as IL/IRL training.
+SAC, TD3 and DDPG share the collector and optional DAC absorbing-state semantics,
+using exactly the same masks as IL/IRL training.
 """
 
 import argparse
@@ -48,11 +48,6 @@ def make_policy(
         action_space.high, action_space.high[0]
     ):
         raise ValueError("Existing actors require uniform symmetric action bounds")
-    if absorbing and algorithm != "sac":
-        raise ValueError(
-            "DAC absorbing targets are currently implemented by SAC; "
-            "TD3/DDPG expert exports can still be DAC-augmented by the IL loader"
-        )
     if xla and algorithm != "sac":
         raise ValueError("XLA compilation is currently exposed for SAC")
     common = {
@@ -69,6 +64,8 @@ def make_policy(
     with tf.device(f"/GPU:{gpu}" if gpu >= 0 else "/CPU:0"):
         if algorithm == "sac":
             if absorbing:
+                # Keep the historical architecture for existing SAC checkpoints;
+                # both SAC variants implement the shared absorbing-state rules.
                 from tf2rl.algos.sac_irl import SAC_IRL
 
                 cls = SAC_IRL
@@ -95,7 +92,8 @@ def make_policy(
             cls = DDPG
         else:
             raise ValueError(f"Unknown off-policy algorithm {algorithm!r}")
-        return cls(**common, lr_actor=learning_rate, lr_critic=learning_rate, sigma=sigma)
+        return cls(**common, lr_actor=learning_rate, lr_critic=learning_rate, sigma=sigma,
+                   is_absorbed_state=absorbing)
 
 
 def checkpoint_prefix(directory):
@@ -161,7 +159,7 @@ def build_parser(algorithm=None):
     parser.add_argument(
         "--absorbing",
         action="store_true",
-        help="Use indicator observations and the existing DAC-aware SAC targets",
+        help="Enable DAC absorbing observations and targets for SAC, TD3 or DDPG",
     )
     parser.add_argument("--absorbing-indicator", type=float, default=0.1)
     parser.add_argument("--max-episode-steps", type=int)
@@ -213,8 +211,6 @@ def run(args):
         raise ConfigurationError("updates-per-transition must be finite and nonnegative")
     if args.memory_capacity < args.batch_size:
         raise ConfigurationError("memory-capacity must be at least batch-size")
-    if args.absorbing and args.algorithm != "sac":
-        raise ConfigurationError("--absorbing requires SAC's DAC target implementation")
     if args.xla and args.algorithm != "sac":
         raise ConfigurationError("--xla currently supports SAC")
     if args.evaluate and args.model_dir is None:

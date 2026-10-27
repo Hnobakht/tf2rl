@@ -26,7 +26,7 @@ An optional [MuJoCo Warp GPU backend](docs/mjwarp.md) adds batched simulation
 with a reusable environment API. PPO, VPG, SAC, TD3 and DDPG can select it with
 `--env-backend mjwarp`; HalfCheetah is the performance validation task.
 [Off-policy training and expert export](docs/mjwarp-off-policy.md) supports CPU
-optimization with GPU simulation, SAC absorbing replay, and trajectories for
+optimization with GPU simulation, optional absorbing-state training, and trajectories for
 the existing IL/IRL workflows.
 [Shared on-policy training](docs/mjwarp-on-policy.md) selects PPO or VPG through
 one collector and launcher, with an interface for additional on-policy agents.
@@ -244,12 +244,27 @@ The collector and expert loader share `dac_transitions`:
 | True termination | 0 | Absorbing state when enabled |
 | Absorbing self-loop | -1 | Same absorbing state; zero action |
 
-These masks are **not boolean done flags**. The absorbing SAC target bootstraps
-terminal/self-loop transitions at zero action, suppresses their next-state entropy,
-and excludes self-loops from actor updates. One self-loop is stored per true terminal
+These masks are **not boolean done flags**. SAC, TD3 and DDPG share optional
+absorbing-state rules in `tf2rl/misc/absorbing_ops.py`. Their Bellman targets bootstrap
+terminal/self-loop transitions at zero action, and their actor updates exclude
+self-loops. SAC additionally suppresses next-state entropy on those transitions. One self-loop is stored per true terminal
 transition. If both Gymnasium flags are true, termination wins. Gymnasium's distinction
 between termination and truncation supports correct bootstrapping.
 [Migration guide](https://gymnasium.farama.org/introduction/migration_guide/).
+
+Enable this feature with `offpolicy-train --algorithm td3 --absorbing ...` (also
+`sac` or `ddpg`), or construct a policy with `is_absorbed_state=True` and use an
+`AbsorbingWrapper`/`VectorAbsorbingWrapper` with the corresponding trainer. The
+feature is disabled by default for ordinary RL. Enabled policies expect the DAC
+masks above in `train()` and `compute_td_error()`; disabled ordinary policies
+expect boolean termination flags. `SAC_IRL` keeps its historical DAC mask contract
+in both modes. The off-policy SAC launcher retains its existing `SAC_IRL`
+architecture when absorption is enabled so existing checkpoints remain usable.
+
+GAIL and EQN-GAIL support `--generator sac|td3|ddpg` (`args.generator=td3` with
+Hydra). Their existing absorbing-state default and `--absorbed-state-disable`
+option apply to every generator. AIRL requires log probabilities and therefore
+continues to use the stochastic SAC generator.
 
 New exports include `terminated`, `truncated` and `format_version=2`, and contain only
 actual transitions in chronological order. Legacy joblib trajectories remain readable.

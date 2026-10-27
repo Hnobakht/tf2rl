@@ -1,10 +1,12 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, Conv2D, Flatten
+from tensorflow.keras.layers import Conv2D, Dense, Flatten
 
 from tf2rl.algos.ddpg import DDPG
 from tf2rl.algos.policy_base import OffPolicyAgent
+from tf2rl.misc.absorbing_ops import ReplaySemantics
 from tf2rl.misc.target_update_ops import update_target_variables
+
 
 class Actor(tf.keras.Model):
     """Deterministic policy mapping state vectors to bounded continuous actions."""
@@ -153,7 +155,11 @@ class Critic_pixels(tf.keras.Model):
         return tf.squeeze(x1, axis=1), tf.squeeze(x2, axis=1)
 
 class TD3(DDPG):
-    """Twin delayed deterministic policy gradient with target-policy smoothing."""
+    """Twin delayed deterministic policy gradient with target-policy smoothing.
+
+    Optional ``is_absorbed_state=True`` uses DAC masks and applies the shared
+    zero-action successor rule after smoothing, including absorbing self-loops.
+    """
     def __init__(
             self,
             state_shape,
@@ -172,9 +178,13 @@ class TD3(DDPG):
             policy_noise=0.2,
             noise_clip=0.5,
             is_pixels = False,
+            is_absorbed_state=False,
             **kwargs):
         """Configure the agent's networks, optimizers, and training hyperparameters."""
         OffPolicyAgent.__init__(self,name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
+        self._is_absorbed_state = is_absorbed_state
+        self._replay = ReplaySemantics(is_absorbed_state)
+        self.replay_mask_encoding = self._replay.mask_encoding
 
         # Define and initialize Actor network
         if is_pixels:
@@ -247,13 +257,14 @@ class TD3(DDPG):
             self._it.assign_add(1)
             with tf.GradientTape() as tape:
                 sample_actions = self.actor(states)
-                actor_loss = - tf.reduce_mean(self.critic(states, sample_actions)[0])
+                actor_loss = self._replay.actor_mean(-self.critic(states, sample_actions)[0], dones)
 
             remainder = tf.math.mod(self._it, self._actor_update_freq)
 
             if tf.equal(remainder, 0):
-                actor_grad = tape.gradient(actor_loss, self.actor.trainable_variables)
-                self.actor_optimizer.apply_gradients(zip(actor_grad, self.actor.trainable_variables))
+                if self._replay.has_actor_samples(dones):
+                    actor_grad = tape.gradient(actor_loss, self.actor.trainable_variables)
+                    self.actor_optimizer.apply_gradients(zip(actor_grad, self.actor.trainable_variables))
                 update_target_variables(self.critic_target.weights, self.critic.weights, self.tau)
                 update_target_variables(self.actor_target.weights, self.actor.weights, self.tau)
             return actor_loss, critic_loss, tf.abs(td_errors1) + tf.abs(td_errors2)
@@ -268,14 +279,10 @@ class TD3(DDPG):
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
         """Compute batched temporal-difference errors using the target networks."""
         print("[DEBUG] initializing {_compute_td_error_body TD3}.")
-        assert len(dones.shape) == 2
-        assert len(rewards.shape) == 2
-        rewards = tf.squeeze(rewards, axis=1)
-        dones = tf.squeeze(dones, axis=1)
+        rewards = tf.reshape(rewards, (-1,))
+        dones = tf.reshape(dones, (-1,))
 
         with tf.device(self.device):
-            not_dones = 1. - tf.cast(dones, dtype=tf.float32)
-
             # Get noisy action
             next_action = self.actor_target(next_states)
             noise = tf.cast(tf.clip_by_value(tf.random.normal(shape=tf.shape(next_action),stddev=self._policy_noise),
@@ -285,9 +292,11 @@ class TD3(DDPG):
                                            -self.actor_target.max_action,
                                            self.actor_target.max_action)
 
+            next_action = self._replay.next_actions(next_action, dones)
             next_q1_target, next_q2_target = self.critic_target(next_states, next_action)
             next_q_target = tf.minimum(next_q1_target, next_q2_target)
-            q_target = tf.stop_gradient(rewards + not_dones * self.discount * next_q_target)
+            q_target = tf.stop_gradient(self._replay.target(
+                rewards, next_q_target, dones, self.discount))
             current_q1, current_q2 = self.critic(states, actions)
 
         return q_target - current_q1, q_target - current_q2

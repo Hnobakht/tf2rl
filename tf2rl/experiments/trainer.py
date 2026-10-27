@@ -1,20 +1,20 @@
 """Gymnasium off-policy training, evaluation, and expert trajectory export."""
 import argparse
-from contextlib import ExitStack
 import copy
 import logging
-from pathlib import Path
+from contextlib import ExitStack
 from functools import wraps
+from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
 
-from tf2rl.algos.sac_irl import SAC_IRL
 from tf2rl.envs.normalizer import EmpiricalNormalizer
-from tf2rl.experiments.utils import save_path, frames_to_gif
+from tf2rl.experiments.utils import frames_to_gif, save_path
+from tf2rl.misc.dac_ops import dac_transitions
 from tf2rl.misc.get_replay_buffer import get_replay_buffer
-from tf2rl.misc.prepare_output_dir import prepare_output_dir
 from tf2rl.misc.initialize_logger import initialize_logger
+from tf2rl.misc.prepare_output_dir import prepare_output_dir
 
 
 def with_summary_writer(method):
@@ -44,7 +44,13 @@ class Trainer:
             raise ValueError("Training and evaluation must use separate environment instances")
         self._test_env = copy.deepcopy(env) if test_env is None else test_env
         self._is_episodic = is_episodic
-        self._is_sac = isinstance(policy, SAC_IRL)
+        self._absorbing = bool(getattr(policy, "_is_absorbed_state", False))
+        self._mask_encoding = getattr(policy, "replay_mask_encoding", "done")
+        if self._absorbing:
+            if self._mask_encoding != "dac" or not env.has_wrapper_attr("get_absorbing_state"):
+                raise ValueError("Absorbing-state training requires an absorbing wrapper and DAC masks")
+            if self._normalize_obs or self._use_nstep_rb:
+                raise ValueError("Absorbing-state training requires unnormalized one-step transitions")
         self._is_dm_env = False
         self._episode_max_steps = self._horizon(env)
         if self._normalize_obs:
@@ -111,10 +117,15 @@ class Trainer:
             next_obs, reward, terminated, truncated, _ = self._env.step(action)
             episode_steps += 1
             truncated = truncated or episode_steps >= self._episode_max_steps
-            mask = float(not terminated) if isinstance(self._policy, SAC_IRL) else float(terminated)
-            self.replay_buffer.add(obs=policy_obs, act=action,
-                                    next_obs=self._policy_observation(np.asarray(next_obs, np.float32)),
-                                    rew=reward, done=mask)
+            final_obs = self._policy_observation(np.asarray(next_obs, np.float32))
+            if self._mask_encoding == "dac":
+                rows = dac_transitions(self._env, policy_obs, action, final_obs, reward,
+                                       terminated, truncated, absorbing=self._absorbing)
+                for row in rows:
+                    self.replay_buffer.add(**row)
+            else:
+                self.replay_buffer.add(obs=policy_obs, act=action, next_obs=final_obs,
+                                       rew=reward, done=float(terminated))
             episode_return += reward
             obs = next_obs
             tf.summary.experimental.set_step(total_steps)

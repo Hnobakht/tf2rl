@@ -3,7 +3,9 @@ import tensorflow as tf
 from tensorflow.keras.layers import Dense
 
 from tf2rl.algos.policy_base import OffPolicyAgent
+from tf2rl.misc.absorbing_ops import ReplaySemantics
 from tf2rl.misc.target_update_ops import update_target_variables
+
 
 class Actor(tf.keras.Model):
     """Deterministic policy mapping state vectors to bounded continuous actions."""
@@ -50,7 +52,11 @@ class Critic(tf.keras.Model):
 
 
 class DDPG(OffPolicyAgent):
-    """Deep deterministic policy gradient with replay and target networks."""
+    """Deep deterministic policy gradient with optional DAC absorbing states.
+
+    ``is_absorbed_state=True`` expects DAC masks (1, 0, -1) in replay;
+    otherwise ``done`` means true termination. Timeouts always bootstrap.
+    """
     def __init__(
             self,
             state_shape,
@@ -65,9 +71,13 @@ class DDPG(OffPolicyAgent):
             tau=0.005,
             n_warmup=int(1e4),
             memory_capacity=int(1e6),
+            is_absorbed_state=False,
             **kwargs):
         """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
+        self._is_absorbed_state = is_absorbed_state
+        self._replay = ReplaySemantics(is_absorbed_state)
+        self.replay_mask_encoding = self._replay.mask_encoding
 
         # Define and initialize Actor network
         self.actor = Actor(state_shape, action_dim, max_action, actor_units)
@@ -168,12 +178,13 @@ class DDPG(OffPolicyAgent):
 
             with tf.GradientTape() as tape:
                 sample_actions = self.actor(states)
-                actor_loss = -tf.reduce_mean(self.critic(states, sample_actions))
+                actor_loss = self._replay.actor_mean(-self.critic(states, sample_actions), dones)
 
-            actor_grad = tape.gradient(
-                actor_loss, self.actor.trainable_variables)
-            self.actor_optimizer.apply_gradients(
-                zip(actor_grad, self.actor.trainable_variables))
+            if self._replay.has_actor_samples(dones):
+                actor_grad = tape.gradient(
+                    actor_loss, self.actor.trainable_variables)
+                self.actor_optimizer.apply_gradients(
+                    zip(actor_grad, self.actor.trainable_variables))
 
             # Update target networks
             update_target_variables(
@@ -196,16 +207,13 @@ class DDPG(OffPolicyAgent):
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
         """Compute batched temporal-difference errors using the target networks."""
         print("[DEBUG] initializing {_compute_td_error_body}.")
-        assert len(dones.shape) == 2
-        assert len(rewards.shape) == 2
-        rewards = tf.squeeze(rewards, axis=1)
-        dones = tf.squeeze(dones, axis=1)
+        rewards = tf.reshape(rewards, (-1,))
+        dones = tf.reshape(dones, (-1,))
 
         with tf.device(self.device):
-            not_dones = 1. - tf.cast(dones, dtype=tf.float32)
-            next_act_target = self.actor_target(next_states)
+            next_act_target = self._replay.next_actions(self.actor_target(next_states), dones)
             next_q_target = self.critic_target(next_states, next_act_target)
-            target_q = rewards + not_dones * self.discount * next_q_target
+            target_q = self._replay.target(rewards, next_q_target, dones, self.discount)
             current_q = self.critic(states, actions)
             td_errors = tf.stop_gradient(target_q) - current_q
         return td_errors
