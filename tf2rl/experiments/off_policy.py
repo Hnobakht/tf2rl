@@ -63,24 +63,18 @@ def make_policy(
     }
     with tf.device(f"/GPU:{gpu}" if gpu >= 0 else "/CPU:0"):
         if algorithm == "sac":
-            if absorbing:
-                # Keep the historical architecture for existing SAC checkpoints;
-                # both SAC variants implement the shared absorbing-state rules.
-                from tf2rl.algos.sac_irl import SAC_IRL
+            from tf2rl.algos.sac import SAC
 
-                cls = SAC_IRL
-                common["is_absorbed_state"] = True
-            else:
-                from tf2rl.algos.sac import SAC
-
-                cls = SAC
-            return cls(
+            return SAC(
                 **common,
                 lr=learning_rate,
                 lr_alpha=learning_rate,
                 auto_alpha=auto_alpha,
                 alpha=alpha,
                 is_xla=xla,
+                is_absorbed_state=absorbing,
+                # Preserve the architecture of existing launcher checkpoints.
+                critic_layer_norm=not absorbing,
             )
         if algorithm == "td3":
             from tf2rl.algos.td3 import TD3

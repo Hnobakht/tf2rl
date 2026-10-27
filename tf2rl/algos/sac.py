@@ -11,14 +11,16 @@ from tf2rl.policies.tfp_gaussian_actor import GaussianActor, GaussianActor_pixel
 class CriticQ(tf.keras.Model):
     """Neural action-value function over state-action pairs."""
     def __init__(self, state_shape, action_dim, critic_units=(256, 256), name='qf',
-                 initializer = tf.keras.initializers.glorot_uniform()):
+                 initializer=None, layer_norm=True):
         """Build the hidden state-action layers and scalar Q-value head."""
         super().__init__(name=name)
+        initializer = initializer or tf.keras.initializers.GlorotUniform()
 
         self.base_layers = []
         for unit in critic_units:
             self.base_layers.append(Dense(unit, activation='relu', kernel_initializer=initializer))
-            self.base_layers.append(LayerNormalization())  # TODO: For GAIL_EQL
+            if layer_norm:
+                self.base_layers.append(LayerNormalization())
         self.out_layer = Dense(1, name="Q", activation='linear', kernel_initializer=initializer)
         for index, layer in enumerate(self.base_layers):
             setattr(self, f"hidden_{index}", layer)
@@ -35,9 +37,10 @@ class CriticQ(tf.keras.Model):
 class CriticQ_pixels(tf.keras.Model):
     """Action-value function using convolutional features from pixel observations."""
     def __init__(self, state_shape, action_dim, critic_units=None, name='qf',
-                 initializer = tf.keras.initializers.glorot_uniform()):
+                 initializer=None, layer_norm=True):
         """Build the image encoder and state-action Q-value layers."""
         super().__init__(name=name)
+        initializer = initializer or tf.keras.initializers.GlorotUniform()
 
         self.cnn_layers = []
         self.cnn_layers.append(Conv2D(4, kernel_size=(3, 3), strides=(1,1), padding='same', activation='relu'))
@@ -48,9 +51,11 @@ class CriticQ_pixels(tf.keras.Model):
 
         self.base_layers = []
         self.base_layers.append(Dense(128, activation='relu', kernel_initializer=initializer))
-        self.base_layers.append(LayerNormalization())
+        if layer_norm:
+            self.base_layers.append(LayerNormalization())
         self.base_layers.append(Dense(64, activation='relu', kernel_initializer=initializer))
-        self.base_layers.append(LayerNormalization())
+        if layer_norm:
+            self.base_layers.append(LayerNormalization())
 
         self.out_layer = Dense(1, name="Q", activation='linear', kernel_initializer=initializer)
 
@@ -78,11 +83,13 @@ class SAC(OffPolicyAgent):
     By default ``d`` means true termination, not time-limit truncation.
     ``is_absorbed_state=True`` instead expects DAC masks (1, 0, -1) and
     bootstraps terminal/self-loop rows at zero action without entropy.
+    ``replay_mask_encoding="dac"`` also supports DAC masks with absorption disabled.
+    ``critic_layer_norm=False`` selects the plain critics used by imitation learning.
     This follows the no-value-network SAC formulation of Haarnoja et al.,
     https://arxiv.org/abs/1812.05905, with repository-specific normalization
     and initialization. Optional absorbing targets use shared replay semantics.
     """
-    def     __init__(
+    def __init__(
             self,
             state_shape,
             action_dim,
@@ -101,13 +108,16 @@ class SAC(OffPolicyAgent):
             is_debug = False,
             is_xla = False,
             is_absorbed_state=False,
+            critic_layer_norm=True,
+            replay_mask_encoding=None,
             **kwargs):
         """Configure the agent's networks, optimizers, and training hyperparameters."""
         super().__init__(
             name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
         self._is_absorbed_state = is_absorbed_state
-        self._replay = ReplaySemantics(is_absorbed_state)
+        self._replay = ReplaySemantics(is_absorbed_state, replay_mask_encoding)
         self.replay_mask_encoding = self._replay.mask_encoding
+        self.critic_layer_norm = bool(critic_layer_norm)
         self._is_debug = is_debug
         self._is_xla = is_xla
         self._is_pixels = is_pixels
@@ -148,10 +158,11 @@ class SAC(OffPolicyAgent):
         Q_func = CriticQ_pixels if self._is_pixels else CriticQ
         with tf.device(self.device):
             q_initializer = tf.keras.initializers.GlorotUniform()
-            self.qf1 = Q_func(state_shape, action_dim, critic_units, name="qf1", initializer=q_initializer)
-            self.qf2 = Q_func(state_shape, action_dim, critic_units, name="qf2", initializer=q_initializer)
-            self.qf1_target = Q_func(state_shape, action_dim, critic_units, name="qf1_target", initializer=q_initializer)
-            self.qf2_target = Q_func(state_shape, action_dim, critic_units, name="qf2_target", initializer=q_initializer)
+            critic_kwargs = {"initializer": q_initializer, "layer_norm": self.critic_layer_norm}
+            self.qf1 = Q_func(state_shape, action_dim, critic_units, name="qf1", **critic_kwargs)
+            self.qf2 = Q_func(state_shape, action_dim, critic_units, name="qf2", **critic_kwargs)
+            self.qf1_target = Q_func(state_shape, action_dim, critic_units, name="qf1_target", **critic_kwargs)
+            self.qf2_target = Q_func(state_shape, action_dim, critic_units, name="qf2_target", **critic_kwargs)
 
             self.qf_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
@@ -165,7 +176,7 @@ class SAC(OffPolicyAgent):
 
     def get_action(self, state, test=False):
         """Return actions and their log probabilities; test mode selects deterministic actions."""
-        assert isinstance(state, np.ndarray)
+        state = np.asarray(state, dtype=np.uint8 if self._is_pixels else np.float32)
         is_single_state = len(state.shape) == self.state_ndim
 
         state_dtype = np.uint8 if self._is_pixels else np.float32
@@ -181,7 +192,8 @@ class SAC(OffPolicyAgent):
         """Batched SAC inference for either CPU or CUDA vector environments."""
         with tf.device(self.device):
             return self._get_action_body_graph(
-                tf.convert_to_tensor(states, tf.float32), tf.constant(test))
+                tf.cast(tf.convert_to_tensor(states), tf.uint8 if self._is_pixels else tf.float32),
+                tf.constant(test))
 
     def compute_action_log_probs(self, states, actions):
         """Density of the supplied actions, used by AIRL-compatible expert exports."""
@@ -199,7 +211,7 @@ class SAC(OffPolicyAgent):
         """Update from uniform one-step replay and return the sampled Bellman targets.
 
         The historical return value is ``y``, not a TD residual; use
-        ``compute_td_error`` for residuals. Rewards and done flags are ``(B,1)``.
+        ``compute_td_error`` for residuals. Rewards and flags may be ``(B,)`` or ``(B,1)``.
         With absorbing states enabled, ``dones`` contains DAC masks (1, 0, -1).
         Non-unit importance weights are unsupported by this research objective.
         """
@@ -207,13 +219,14 @@ class SAC(OffPolicyAgent):
             raise NotImplementedError("SAC does not implement importance-weighted losses")
 
         with tf.device(self.device):
-            states, actions, next_states, rewards, dones = \
-                tuple([tf.constant(i) for i in (states, actions, next_states, rewards, dones)])
+            states, actions, next_states, rewards, dones = self._batch_tensors(
+                states, actions, next_states, rewards, dones)
 
             td_errors, actor_loss, qf1, qf1_loss, logp_min, logp_max, logp_mean = self._train_body_graph(
                 states, actions, next_states, rewards, dones)
 
             tf.summary.scalar(name=self.policy_name + "/actor_loss", data=actor_loss)
+            tf.summary.scalar(name=self.policy_name + "/target_Q", data=tf.reduce_mean(td_errors))
             tf.summary.scalar(name=self.policy_name + "/critic_Q1_value", data=tf.reduce_mean(qf1))
             tf.summary.scalar(name=self.policy_name + "/critic_Q1_loss", data=qf1_loss)
             tf.summary.scalar(name=self.policy_name + "/logp_min", data=logp_min)
@@ -280,17 +293,24 @@ class SAC(OffPolicyAgent):
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
         """Return temporal-difference errors for the supplied transition batch."""
-        if isinstance(actions, tf.Tensor):
-            rewards = tf.expand_dims(rewards, axis=1)
-            dones = tf.expand_dims(dones, 1)
-
         with tf.device(self.device):
-            states, actions, next_states, rewards, dones = \
-                tuple([tf.constant(i) for i in (states, actions, next_states, rewards, dones)])
+            states, actions, next_states, rewards, dones = self._batch_tensors(
+                states, actions, next_states, rewards, dones)
 
             td_errors = self._compute_td_error_body_graph(states, actions, next_states, rewards, dones)
 
         return td_errors.numpy()
+
+    def _batch_tensors(self, states, actions, next_states, rewards, dones):
+        """Normalize both RL and imitation batches to the shared graph signatures."""
+        state_dtype = tf.uint8 if self._is_pixels else tf.float32
+        return (
+            tf.cast(tf.convert_to_tensor(states), state_dtype),
+            tf.cast(tf.convert_to_tensor(actions), tf.float32),
+            tf.cast(tf.convert_to_tensor(next_states), state_dtype),
+            tf.reshape(tf.cast(tf.convert_to_tensor(rewards), tf.float32), (-1, 1)),
+            tf.reshape(tf.cast(tf.convert_to_tensor(dones), tf.float32), (-1, 1)),
+        )
 
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
         """Compute batched temporal-difference errors using the target networks."""
@@ -308,16 +328,20 @@ class SAC(OffPolicyAgent):
         return tf.stop_gradient(self._replay.target(
             rewards, q_next, dones, self.discount, entropy=self.alpha * logp))
 
-    def get_logp(self, state):
-        """Sample fresh policy actions and return their log densities at these states."""
-        assert isinstance(state, np.ndarray)
+    def get_logp(self, state, actions=None):
+        """Evaluate supplied actions, or retain the historical fresh-action sample."""
+        state = np.asarray(state, dtype=np.uint8 if self._is_pixels else np.float32)
         is_single_state = len(state.shape) == self.state_ndim
 
-        state = np.expand_dims(state, axis=0).astype(
-            np.float32) if is_single_state else state
+        state = np.expand_dims(state, axis=0) if is_single_state else state
 
         with tf.device(self.device):
-            logp = self._get_logp_body_graph(tf.constant(state))
+            if actions is None:
+                logp = self._get_logp_body_graph(tf.constant(state))
+            else:
+                actions = np.asarray(actions, dtype=np.float32)
+                logp = self.compute_action_log_probs(
+                    tf.constant(state), tf.constant(actions[None] if is_single_state else actions))
 
         return logp.numpy()[0] if is_single_state else logp.numpy()
 
@@ -361,7 +385,7 @@ class SAC(OffPolicyAgent):
 
             self._get_action_body_graph = tf.function(self._get_action_body,
                                                       input_signature=[tf.TensorSpec(shape=state_spec, dtype=state_dtype),
-                                                                       tf.TensorSpec(shape=(None), dtype=tf.bool)],
+                                                                       tf.TensorSpec(shape=(), dtype=tf.bool)],
                                                       jit_compile=xla)
 
     @staticmethod
@@ -375,4 +399,5 @@ class SAC(OffPolicyAgent):
         parser.add_argument('--draw-reward-function', action="store_true", help=" <default: %(default)s>")
         parser.add_argument('--units', type=str, default="128,128",
                             help='Network architectures. use case: 128,128 or 400,300. <default: %(default)s>')
+        parser.add_argument('--xla', action='store_true')
         return parser

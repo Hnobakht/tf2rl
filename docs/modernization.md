@@ -17,9 +17,9 @@ available, with `EQNAIRL` and `EQNGAIL` aliases.
 `irl_losses.py` names the AIRL/GAIL objectives and agent-only gradient penalty.
 `IRLTrainerV2` handles DAC collection, replay, expert/noise sampling, discriminator
 updates and evaluation for both algorithms. `AIRLTrainerV2` supplies the stored
-expert log probabilities to that shared pipeline. The generator is the custom
-`SAC_IRL`, retaining its separate conventional and absorbing targets. Expert SAC
-retains its distinct critic LayerNormalization architecture.
+expert log probabilities to that shared pipeline. The generator is `SAC` with plain critics and DAC replay masks. Expert SAC
+uses the same implementation with critic LayerNormalization enabled. Both modes
+support optional absorbing targets.
 
 `demonstrations.py` handles trajectory I/O independently from rendering.
 `expert_sampling.py` preserves sampling without replacement, integer noise counts
@@ -171,7 +171,7 @@ These fixes affect broken or ambiguous executions and can change numerical resul
 These repairs are explicitly disclosed; full learning-curve equivalence is not claimed.
 Unsupported research schedules and incompatible DAC replay modes raise descriptive
 errors instead of silently ignoring flags or corrupting masks. The DAC path requires
-uniform, one-step replay and the custom SAC_IRL generator.
+uniform, one-step replay and an off-policy generator with compatible replay semantics.
 
 ## Dependencies, files and compatibility
 
@@ -220,11 +220,11 @@ record historical validation, not a currently shipped test suite.
 ## Optional absorbing-state support across off-policy algorithms
 
 The Bellman target, zero-action successor rule and physical-row actor reduction
-now live in `misc/absorbing_ops.py`, shared by SAC, SAC_IRL, TD3 and DDPG.
+now live in `misc/absorbing_ops.py`, shared by SAC, TD3 and DDPG.
 `is_absorbed_state=True` opts ordinary policies into DAC masks; their disabled
-mode still accepts boolean termination flags. SAC_IRL retains DAC masks in both
-modes and re-exports its historical target/actor helpers. SAC's historical alpha
-objective is unchanged. TD3 zeroes absorbing successor actions after smoothing;
+mode still accepts boolean termination flags. SAC can also select DAC masks
+explicitly through `replay_mask_encoding="dac"`. Its historical alpha objective
+is unchanged. TD3 zeroes absorbing successor actions after smoothing;
 all algorithms skip actor optimizer updates on loop-only batches, including Adam
 momentum updates. Critic updates and target-network schedules remain active.
 
@@ -236,3 +236,23 @@ GAIL/EQN-GAIL expose `--generator sac|td3|ddpg`; deterministic generators work w
 both absorbing and ordinary targets. AIRL still requires policy log probabilities.
 Observation normalization and N-step returns are rejected for absorbing scalar
 collection because those transformations do not preserve this replay contract.
+
+
+## Single SAC implementation
+
+`algos/sac_irl.py` and its `SAC_IRL` class have been removed, with no compatibility
+wrapper. All launchers, GAIfO examples and the equation-policy comparison script
+now import `SAC`. Critic normalization and replay encoding are constructor options:
+ordinary SAC retains `critic_layer_norm=True` and boolean termination flags;
+imitation experiments select `critic_layer_norm=False, replay_mask_encoding="dac"`.
+The absorbing off-policy launcher selects plain critics to preserve existing
+checkpoint structure. `is_absorbed_state` independently controls absorbing targets.
+
+The actor, target, critic/temperature updates, inference and TD diagnostics now
+have one implementation. Batch conversion accepts vector or column rewards and
+flags, including tensor inputs. `get_logp` accepts supplied actions as well as
+historical fresh-action sampling. Training summaries include the metrics used by
+both former variants. XLA now applies consistently to SAC training, inference and
+TD diagnostics; imitation previously compiled only training. Network attribute
+paths and optimizer variable order are retained for TensorFlow checkpoint restore.
+Pixel SAC remains available and tensor inference preserves its uint8 input type.

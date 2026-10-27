@@ -1,12 +1,12 @@
 import gymnasium as gym
-import tf2rl
 
+import tf2rl
 from tf2rl.algos.gaifo_eql import GAIfO_EQL
-from tf2rl.algos.sac_irl import SAC_IRL as SAC
+from tf2rl.algos.sac import SAC
+from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
 from tf2rl.experiments.irl_trainer import IRLTrainer
 from tf2rl.experiments.utils import restore_latest_n_traj
 from tf2rl.misc.prepare_output_dir import prep_log_tag
-from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
 
 if __name__ == '__main__':
     parser = IRLTrainer.get_argument()
@@ -33,6 +33,8 @@ if __name__ == '__main__':
     test_env = AbsorbingWrapper(gym.make(args.env_name), indicator=0.1)
 
     policy = SAC(
+        critic_layer_norm=False,
+        replay_mask_encoding="dac",
         state_shape=env.observation_space.shape,
         action_dim=env.action_space.high.size,
         max_action=env.action_space.high[0],

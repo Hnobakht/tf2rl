@@ -12,7 +12,6 @@ from tf2rl.algos.ddpg import DDPG
 from tf2rl.algos.gail import GAIL
 from tf2rl.algos.gail_eql import GAIL_EQL
 from tf2rl.algos.sac import SAC
-from tf2rl.algos.sac_irl import SAC_IRL
 from tf2rl.algos.td3 import TD3
 from tf2rl.experiments.airl_trainer import AIRLTrainer
 from tf2rl.experiments.demonstrations import restore_latest_n_traj
@@ -47,9 +46,7 @@ def make_policy(args, env, *, imitation, absorbing):
             lr_actor=args.lr, lr_critic=args.lr,
             is_absorbed_state=absorbing,
         )
-    policy_class = SAC_IRL if imitation else SAC
-    absorbing_kwargs = {"is_absorbed_state": absorbing} if imitation else {}
-    return policy_class(
+    return SAC(
         state_shape=env.observation_space.shape,
         action_dim=env.action_space.shape[0],
         max_action=float(env.action_space.high[0]),
@@ -64,7 +61,9 @@ def make_policy(args, env, *, imitation, absorbing):
         lr=args.lr,
         lr_alpha=args.lr_alpha,
         is_xla=args.xla,
-        **absorbing_kwargs,
+        is_absorbed_state=absorbing,
+        critic_layer_norm=not imitation,
+        replay_mask_encoding="dac" if imitation else None,
     )
 
 

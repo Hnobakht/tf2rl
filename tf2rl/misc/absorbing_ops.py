@@ -63,11 +63,11 @@ class ReplaySemantics:
 
 
 def dac_target(rewards, masks, next_q, next_logp, alpha, discount, absorbing):
-    """Compatibility entry point for the historical SAC_IRL target helper."""
+    """SAC entropy-regularized Bellman target for callers supplying DAC masks."""
     return ReplaySemantics(absorbing, "dac").target(
         rewards, next_q, masks, discount, entropy=alpha * next_logp)
 
 
 def dac_actor_loss(logp, q, masks, alpha, absorbing):
-    """Compatibility entry point for the historical SAC_IRL actor helper."""
+    """SAC actor objective for callers supplying DAC masks."""
     return ReplaySemantics(absorbing, "dac").actor_mean(alpha * logp - q, masks)

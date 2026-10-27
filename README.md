@@ -257,9 +257,17 @@ Enable this feature with `offpolicy-train --algorithm td3 --absorbing ...` (also
 `AbsorbingWrapper`/`VectorAbsorbingWrapper` with the corresponding trainer. The
 feature is disabled by default for ordinary RL. Enabled policies expect the DAC
 masks above in `train()` and `compute_td_error()`; disabled ordinary policies
-expect boolean termination flags. `SAC_IRL` keeps its historical DAC mask contract
-in both modes. The off-policy SAC launcher retains its existing `SAC_IRL`
-architecture when absorption is enabled so existing checkpoints remain usable.
+expect boolean termination flags.
+
+There is one continuous `SAC` implementation. `critic_layer_norm=True` preserves
+ordinary SAC's normalized critics; `critic_layer_norm=False` selects the plain
+critics used by imitation experiments. `replay_mask_encoding="dac"` selects DAC
+masks even when absorbing transitions are disabled. The imitation and off-policy
+launchers set these options to preserve their existing experiment architectures.
+The former `SAC_IRL` class/module has been removed: migrate imports to
+`tf2rl.algos.sac.SAC` and pass `critic_layer_norm=False,
+replay_mask_encoding="dac"` when restoring its checkpoints. Absorbing-state
+support remains independently controlled by `is_absorbed_state`.
 
 GAIL and EQN-GAIL support `--generator sac|td3|ddpg` (`args.generator=td3` with
 Hydra). Their existing absorbing-state default and `--absorbed-state-disable`

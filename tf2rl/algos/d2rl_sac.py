@@ -1,9 +1,9 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
 
+from tf2rl.algos.sac import SAC, CriticQ
 from tf2rl.misc.target_update_ops import update_target_variables
 from tf2rl.policies.tfp_gaussian_actor import GaussianActor
-from tf2rl.algos.sac import SAC, CriticQ
 
 
 class DenseCriticQ(CriticQ):
@@ -55,13 +55,13 @@ class D2RLSAC(SAC):
         """Create Q-value networks, initialize their targets, and configure optimization."""
         initializer = tf.keras.initializers.GlorotUniform()
         self.qf1 = DenseCriticQ(state_shape, action_dim, critic_units,
-                                name="qf1", initializer=initializer)
+                                name="qf1", initializer=initializer, layer_norm=self.critic_layer_norm)
         self.qf2 = DenseCriticQ(state_shape, action_dim, critic_units,
-                                name="qf2", initializer=initializer)
+                                name="qf2", initializer=initializer, layer_norm=self.critic_layer_norm)
         self.qf1_target = DenseCriticQ(state_shape, action_dim, critic_units,
-                                       name="qf1_target", initializer=initializer)
+                                       name="qf1_target", initializer=initializer, layer_norm=self.critic_layer_norm)
         self.qf2_target = DenseCriticQ(state_shape, action_dim, critic_units,
-                                       name="qf2_target", initializer=initializer)
+                                       name="qf2_target", initializer=initializer, layer_norm=self.critic_layer_norm)
         states = tf.zeros((1,) + tuple(state_shape), tf.float32)
         actions = tf.zeros((1, action_dim), tf.float32)
         for critic in (self.qf1, self.qf2, self.qf1_target, self.qf2_target):

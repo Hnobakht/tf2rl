@@ -9,7 +9,7 @@ import tensorflow as tf
 
 from tf2rl.algos.airl import AIRL
 from tf2rl.algos.gail_eql import equation_arguments
-from tf2rl.algos.sac_irl import SAC_IRL
+from tf2rl.algos.sac import SAC
 from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
 from tf2rl.experiments.imitation import (
     make_discriminator,
@@ -24,7 +24,7 @@ from tf2rl.experiments.trainer import Trainer
 
 def build_parser(algorithm=None):
     """Build the compatible imitation/expert CLI without starting training."""
-    parser = equation_arguments(AIRL.get_argument(SAC_IRL.get_argument(IRLTrainer.get_argument())))
+    parser = equation_arguments(AIRL.get_argument(SAC.get_argument(IRLTrainer.get_argument())))
     parser.add_argument(
         "--algorithm",
         choices=("airl", "gail", "eqn-airl", "eqn-gail", "sac"),

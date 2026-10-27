@@ -18,7 +18,7 @@ or correctness of every retained experimental algorithm and configuration.
 | `algos/irl_losses.py` | Expert-positive binary classification; stable AIRL normalization; agent-only squared probability-gradient penalty. |
 | `algos/airl.py` | Reward/potential decomposition `f=r+gamma*V(next)-V(state)`; inference returns the unshaped reward. |
 | `algos/sac.py` | One-step soft Bellman targets and reparameterized actor objective with ordinary termination flags. `train()` historically returns targets, not TD errors. |
-| `algos/sac_irl.py` | Three-valued DAC masks, absorbing-state bootstrapping, and physical-row actor averaging. |
+| `algos/sac.py`, `misc/absorbing_ops.py` | Unified SAC, configurable critic normalization/replay masks, absorbing-state bootstrapping, and physical-row actor averaging. |
 | `policies/tfp_gaussian_actor.py` | Gaussian reparameterization, tanh Jacobian, normalized-action density convention, and latent entropy. |
 | `networks/eqn.py` | Exact operator dictionary, relaxed domains, domain penalties, and discriminator-update-based sparsity stages. |
 | `experiments/vector_on_policy_trainer.py` | GAE recursion with separate bootstrap and episode-boundary masks. |
