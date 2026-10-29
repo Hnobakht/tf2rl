@@ -202,7 +202,9 @@ def main():
             command = [
                 sys.executable,
                 "-m",
-                "tf2rl.experiments.off_policy",
+                "tf2rl.experiments.train",
+                "--runner",
+                "off_policy",
                 "--algorithm",
                 "sac",
                 "--env-name",

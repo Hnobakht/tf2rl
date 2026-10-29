@@ -318,3 +318,7 @@ def view_policy(argv=None):
         if video is not None:
             video.release()
         env.close()
+
+
+if __name__ == "__main__":
+    view_policy()

@@ -33,7 +33,9 @@ def main():
             command = [
                 sys.executable,
                 "-m",
-                "tf2rl.experiments.on_policy",
+                "tf2rl.experiments.train",
+                "--runner",
+                "on_policy",
                 "--algorithm",
                 args.algorithm,
                 "--env-name",

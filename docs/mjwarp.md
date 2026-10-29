@@ -12,12 +12,12 @@ The implementation has three reusable parts:
 - `MJWarpVectorEnv` adds task adapters for observations, rewards, termination,
   random resets and time limits. Built-in adapters currently cover
   `HalfCheetah-v5` and `InvertedPendulum-v5`.
-- `VectorOnPolicyTrainer` collects tensor rollouts from either backend through
+- `OnPolicyTrainer` collects tensor rollouts from either backend through
   `OnPolicyAgent`'s tensor interface. PPO and VPG retain their own losses and
   stopping rules. Observation and action sizes come from the environment spaces.
   See [shared on-policy training](mjwarp-on-policy.md) for algorithm selection,
   checkpoints, and registration of additional agents.
-- `VectorOffPolicyTrainer` collects into shared replay for SAC, TD3 and DDPG,
+- `OffPolicyTrainer` collects into shared replay for SAC, TD3 and DDPG,
   including correct final observations, optional SAC/TD3/DDPG absorbing states and
   complete expert-episode export. See [off-policy usage](mjwarp-off-policy.md).
 
@@ -55,7 +55,7 @@ This does not change the dependency requirements of the research workflows.
 
 ```python
 import numpy as np
-from tf2rl.envs.vector_env import make_vector_env
+from tf2rl.envs.vector import make_vector_env
 
 env = make_vector_env("HalfCheetah-v5", num_envs=256, backend="mjwarp")
 try:
@@ -120,7 +120,7 @@ Run from the checkout in the GPU container:
 ```bash
 /tmp/tf2rl-mjwarp/bin/python -m unittest discover -s tests -p test_mjwarp.py -v
 
-/tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.ppo \
+/tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.train --runner on_policy --algorithm ppo \
   --env-name HalfCheetah-v5 --env-backend mjwarp --gpu 0 \
   --num-envs 256 --rollout-steps 32 --batch-size 1024 --epochs 4 \
   --iterations 128 --output results/mjwarp/halfcheetah_ppo
@@ -129,9 +129,8 @@ Run from the checkout in the GPU container:
   --env-name HalfCheetah-v5 --iterations 5
 ```
 
-The common `tf2rl.experiments.on_policy` entry point accepts `--algorithm ppo`
-or `--algorithm vpg`, other task IDs, and `--env-backend gymnasium`. The existing
-PPO entry point delegates to it. It supports vector Box observations, uniform
+The common `tf2rl.experiments.train --runner on_policy` entry point accepts `--algorithm ppo`
+or `--algorithm vpg`, other task IDs, and `--env-backend gymnasium`. The `ppo-train` command supplies PPO defaults through the same assembly. It supports vector Box observations, uniform
 symmetric continuous action bounds, and native discrete tasks.
 It saves TensorBoard events, checkpoint files and `metrics.json`, including
 device placement and dependency versions. Its horizon is
@@ -152,7 +151,7 @@ policy/learner:
 
 ```bash
 docker exec -it -w /main/git_repos/tf2rl tf-gpu-tensorflow-1 \
-  /tmp/tf2rl-mjwarp/bin/python -u -m tf2rl.experiments.ppo \
+  /tmp/tf2rl-mjwarp/bin/python -u -m tf2rl.experiments.train --runner on_policy --algorithm ppo \
   --env-name HalfCheetah-v5 --env-backend mjwarp --env-gpu 0 --gpu -1 \
   --cpu-threads 6 --num-envs 40960 --rollout-steps 32 \
   --batch-size 8192 --epochs 4 --iterations 100 --warmup-iterations 0 \
@@ -166,7 +165,7 @@ at startup, and TensorBoard events flush every measured iteration.
 On the host, render the latest saved checkpoint to MP4 and open it:
 
 ```bash
-MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=-1 .venv-modern/bin/python -m tf2rl.experiments.ppo_view \
+MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=-1 .venv-modern/bin/python -m tf2rl.training.evaluation \
   --run-dir results/ppo_halfcheetah_mjwarp_40960_cpu --episodes 3 \
   --output results/ppo_halfcheetah_mjwarp_40960_cpu/policy.mp4
 xdg-open results/ppo_halfcheetah_mjwarp_40960_cpu/policy.mp4

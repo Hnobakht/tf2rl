@@ -15,7 +15,7 @@ uses the NJU mirror. From the host checkout, for example:
 
 ```bash
 docker exec -w /main/git_repos/tf2rl tf-gpu-tensorflow-1 \
-  /tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.off_policy \
+  /tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.train --runner off_policy \
   --algorithm sac --env-name HalfCheetah-v5 \
   --env-backend mjwarp --env-gpu 0 --gpu -1 \
   --num-envs 256 --max-steps 10000000 \
@@ -27,10 +27,9 @@ docker exec -w /main/git_repos/tf2rl tf-gpu-tensorflow-1 \
 ```
 
 `--algorithm td3` and `--algorithm ddpg` use the same collector. The module also
-has an `offpolicy-train` installed entry point and an
-`examples/off_policy_run.py` launcher. `examples/sac_run.py` selects the vector
-entry point when passed `--env-backend` or `--num-envs`; its existing scalar
-interface remains available.
+has an `offpolicy-train` installed entry point and the
+`examples/train_sac.py` launcher. Select `--runner imitation --algorithm sac`
+through `experiments/train.py` for the scalar expert recipe.
 
 The update ratio above is an example, not an established optimum:
 
@@ -126,7 +125,7 @@ For the non-absorbing SAC example above:
 
 ```bash
 docker exec -w /main/git_repos/tf2rl tf-gpu-tensorflow-1 \
-  /tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.off_policy \
+  /tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.train --runner off_policy \
   --algorithm sac --env-name HalfCheetah-v5 --units 256 256 \
   --env-backend mjwarp --eval-env-backend mjwarp --gpu -1 \
   --model-dir results/sac_mjwarp --evaluate \
@@ -160,7 +159,7 @@ expert training and imitation training when exporting augmented observations.
 For example, inside the container:
 
 ```bash
-/tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.cli \
+/tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.train --runner imitation \
   --algorithm gail --env-name HalfCheetah-v5 \
   --expert-path-dir results/sac_mjwarp/expert --n-expert-trajectories 20 \
   --gpu -1 --logdir results/gail_from_mjwarp

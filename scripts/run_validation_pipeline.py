@@ -46,7 +46,7 @@ def main():
         directory = output / algorithm
         directory.mkdir(parents=True, exist_ok=True)
         before = set(directory.iterdir())
-        command = [sys.executable, '-m', 'tf2rl.experiments.cli', '--algorithm', algorithm,
+        command = [sys.executable, '-m', 'tf2rl.experiments.train', '--runner', 'imitation', '--algorithm', algorithm,
                    '--seed', str(seed), '--logdir', str(directory),
                    '--dir-suffix', f'pendulum_seed{seed}', *common]
         if expert is None:

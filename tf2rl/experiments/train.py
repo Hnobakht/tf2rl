@@ -177,19 +177,19 @@ def main(argv=None, algorithm=None, runner=None):
 
 
 def imitation_main(argv=None):
-    return main(argv, runner="imitation")
+    main(argv, runner="imitation")
 
 
 def off_policy_main(argv=None):
-    return main(argv, runner="off_policy")
+    main(argv, runner="off_policy")
 
 
 def on_policy_main(argv=None):
-    return main(argv, runner="on_policy")
+    main(argv, runner="on_policy")
 
 
 def ppo_main(argv=None):
-    return main(argv, runner="on_policy", algorithm="ppo")
+    main(argv, runner="on_policy", algorithm="ppo")
 
 
 if __name__ == "__main__":

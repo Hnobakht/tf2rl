@@ -1,7 +1,7 @@
 # Shared on-policy MJWarp training
 
 MJWarp is selected by the environment factory. The common on-policy launcher and
-`VectorOnPolicyTrainer` support **both on-policy algorithms currently implemented
+`OnPolicyTrainer` support **both on-policy algorithms currently implemented
 in this project: PPO and VPG**. The collector does not construct PPO, require its
 network layout, or impose its KL stopping rule on other algorithms.
 
@@ -12,7 +12,7 @@ For example, from the host checkout:
 
 ```bash
 docker exec -w /main/git_repos/tf2rl tf-gpu-tensorflow-1 \
-  /tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.on_policy \
+  /tmp/tf2rl-mjwarp/bin/python -m tf2rl.experiments.train --runner on_policy \
   --algorithm vpg --env-name HalfCheetah-v5 \
   --env-backend mjwarp --env-gpu 0 --gpu -1 \
   --num-envs 256 --rollout-steps 32 --batch-size 1024 \
@@ -25,10 +25,9 @@ keeps policy inference and optimization on CPU; `--gpu 0` uses the GPU learner.
 gymnasium` for native CPU environments. Existing task-adapter coverage and limits
 are described in [the backend guide](mjwarp.md).
 
-The installed entry point is `onpolicy-train`. The example launchers are
-`examples/on_policy_run.py`, `examples/vpg_run.py` and `examples/ppo_run.py`.
-Existing `python -m tf2rl.experiments.ppo` and `ppo-train` commands delegate to the
-shared implementation and keep PPO defaults.
+The installed entry point is `onpolicy-train`. `examples/train_ppo.py` selects
+PPO; `python -m tf2rl.experiments.train --runner on_policy --algorithm vpg`
+selects VPG. `ppo-train` supplies PPO defaults through the same assembly.
 
 | Algorithm | Actor objective | Default epochs per rollout | Update stopping |
 | --- | --- | ---: | --- |
@@ -59,12 +58,11 @@ To render a checkpoint into a video from the host checkout, using the existing
 render-enabled environment:
 
 ```bash
-MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=-1 .venv-modern/bin/python -m tf2rl.experiments.on_policy_view \
+MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=-1 .venv-modern/bin/python -m tf2rl.training.evaluation \
   --run-dir results/mjwarp/vpg --episodes 1 --output results/mjwarp/vpg.mp4
 ```
 
-Omit `--output` for an interactive viewer with an available display. The old
-`tf2rl.experiments.ppo_view` path delegates to this viewer. Saved configurations
+Omit `--output` for an interactive viewer with an available display. Saved configurations
 without an algorithm field are interpreted as historical PPO runs.
 Rendering in a container additionally requires EGL libraries; the existing
 TensorFlow container was validated for simulation and host-side playback.
@@ -90,18 +88,19 @@ An `OnPolicyAgent` uses these tensor methods:
 
 The collector depends on this interface instead of actor/critic attributes or
 PPO types. For direct Python use, construct the agent and pass it with any
-supported vector environment to `VectorOnPolicyTrainer`.
+supported vector environment to `OnPolicyTrainer`.
 
 To expose an additional agent through the common launcher, register its factory
 before invoking `main`:
 
 ```python
-from tf2rl.experiments.on_policy import register_on_policy_algorithm, main
+from tf2rl.experiments.build import register_on_policy_algorithm
+from tf2rl.experiments.train import main
 
 # MyAgent implements the OnPolicyAgent tensor interface and accepts the
 # standard model/training constructor keywords, or is wrapped by a factory.
 register_on_policy_algorithm("my-agent", MyAgent, default_epochs=1)
-main()  # Now accepts --algorithm my-agent --env-backend mjwarp.
+main(runner="on_policy", algorithm="my-agent")
 ```
 
 No environment-backend changes are needed when adding an algorithm. This does
@@ -109,12 +108,9 @@ not supply implementations of algorithms absent from the repository.
 
 ## Validation
 
-`python -m unittest discover -s tests` checks the distinct PPO/VPG objectives,
-continuous/discrete rollout log probabilities, network updates, checkpoint
-restoration, shared actor/value networks, custom agents without actor/critic
-attributes, and algorithm-owned stopping. Optional GPU checks run PPO and VPG
-on MJWarp HalfCheetah with both CPU and GPU learners. Existing physics, timeout,
-off-policy replay and absorbing-state regression checks remain in the suite.
+Run the short workflows described in [validation](validation.md). The current
+checkout has no unit-test suite. GPU/MJWarp execution requires the optional GPU
+runtime; historical GPU results and their limits remain recorded there.
 
 The backend comparison script also accepts `--algorithm ppo` or `--algorithm vpg`:
 

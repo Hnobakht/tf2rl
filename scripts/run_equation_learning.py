@@ -58,7 +58,7 @@ def main():
         directory.mkdir(parents=True, exist_ok=True)
         before = set(directory.iterdir())
         algorithm = 'sac' if variant == 'sac' else 'eqn-gail'
-        command = [sys.executable, '-m', 'tf2rl.experiments.cli', '--algorithm', algorithm,
+        command = [sys.executable, '-m', 'tf2rl.experiments.train', '--runner', 'imitation', '--algorithm', algorithm,
                    '--seed', '7' if variant == 'sac' else '13', '--logdir', str(directory), *common]
         if variant == 'sac':
             command += ['--test-episodes', '20', '--save-test-path']
