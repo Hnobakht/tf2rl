@@ -3,7 +3,7 @@
 This is a historical record. Unit-test suites and their pytest dependency were
 removed at the project owner's request on 2026-10-16; the pytest commands below
 describe the earlier validation and are no longer runnable in the current tree.
-Current smoke workflows and cleanup validation are described in [cleanup.md](cleanup.md).
+Current smoke workflows and cleanup validation are described in [cleanup.md](history/cleanup.md).
 
 The repository-local `.venv-modern` contains the base dependencies and all declared
 `test`, `render`, `mujoco`, and `dev` extras. `pip check` passes. Runtime versions:
@@ -118,3 +118,34 @@ MuJoCo geometry checks do not establish numerical equivalence to older physics.
 Seeded Python/NumPy/TensorFlow/environment setup does not promise bitwise identical
 results across library versions or replay-buffer RNG implementations. Resuming a
 checkpoint restores weights/optimizers, not replay contents or environment/RNG state.
+
+
+## Research architecture refactor (2026-10-29)
+
+The implementation now follows the research package layout documented in
+[architecture](architecture.md). CPU validation used the existing TensorFlow
+2.18.1, TensorFlow Probability 0.25.0, Gymnasium 1.3.0 environment.
+
+- Seven matched before/after runs produced exactly equal values for all 810 saved
+  policy, target-network, optimizer and discriminator tensors. Coverage included
+  vector SAC, PPO, scalar expert SAC, AIRL, GAIL, EQN-AIRL and EQN-GAIL. Runs used
+  16 physical transitions, small networks, and the same baseline demonstrations.
+- The existing 300-step-per-stage SAC → GAIL → EQN-GAIL workflow completed.
+  Its record inspector reported finite metrics, saved checkpoints and expert I/O.
+- Focused executed checks covered true termination, truncation, simultaneous
+  termination/truncation, absorbing self-loops, physical-step accounting, and
+  on-policy truncation bootstrapping.
+- All 66 inspected algorithm, network, data, training, task and wrapper modules
+  imported. Hopper, HalfCheetah and maze research environments reset and stepped
+  through their relocated task definitions and original XML assets.
+- All ten Hydra presets and their three hyphenated aliases composed. A Hydra PPO
+  child run and the custom-algorithm example completed. A pre-refactor SAC
+  checkpoint restored and evaluated through the new entry point.
+- Existing example smoke commands, compilation, focused static checks and
+  wheel/source package builds passed. The extracted wheel also completed a VPG
+  training run from outside the checkout.
+
+Matched-checkpoint records and pipeline metrics are under
+`.work/architecture-refactor/`. These checks establish compatibility for the
+exercised short CPU paths. GPU/MJWarp execution and the older experimental methods
+were not revalidated in this refactor.

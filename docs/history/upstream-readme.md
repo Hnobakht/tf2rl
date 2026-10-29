@@ -1,6 +1,6 @@
 [![Build Status](https://travis-ci.org/keiohta/tf2rl.svg?branch=master)](https://travis-ci.org/keiohta/tf2rl)
 [![Coverage Status](https://coveralls.io/repos/github/keiohta/tf2rl/badge.svg?branch=master)](https://coveralls.io/github/keiohta/tf2rl?branch=master)
-[![MIT License](http://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
+[![MIT License](http://img.shields.io/badge/license-MIT-blue.svg?style=flat)](../LICENSE)
 [![GitHub issues open](https://img.shields.io/github/issues/keiohta/tf2rl.svg)]()
 [![PyPI version](https://badge.fury.io/py/tf2rl.svg)](https://badge.fury.io/py/tf2rl)
 

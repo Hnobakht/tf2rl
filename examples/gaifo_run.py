@@ -1,12 +1,12 @@
 import gymnasium as gym
 
 import tf2rl
-from tf2rl.algos.gaifo import GAIfO
-from tf2rl.algos.sac import SAC
-from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
+from tf2rl.algos.imitation.gaifo import GAIfO
+from tf2rl.algos.rl.sac import SAC
+from tf2rl.envs.wrappers.absorbing import AbsorbingWrapper
 from tf2rl.experiments.irl_trainer import IRLTrainer
 from tf2rl.experiments.utils import restore_latest_n_traj
-from tf2rl.misc.prepare_output_dir import prep_log_tag
+from tf2rl.utils.logging import prep_log_tag
 
 if __name__ == '__main__':
     parser = IRLTrainer.get_argument()

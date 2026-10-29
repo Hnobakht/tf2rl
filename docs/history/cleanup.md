@@ -18,7 +18,7 @@ TensorBoard records, environment assets and local environments were preserved.
 - Moved 37 historical algorithm/trainer/launcher files to `legacy/python` and
   preserved the old combined layer module there as well. Its manifest verifies all
   38 originals by SHA-256. The archive is excluded from wheel and source packages.
-  See [the version map](../legacy/python/README.md).
+  See [the version map](../../legacy/python/README.md).
 
 Different scientific variants were not treated as equivalent. Old log/div branches,
 reversed AIRL, old SAC critic arrangements, and different GAIfO/VAIL objectives are

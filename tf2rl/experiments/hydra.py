@@ -1,6 +1,6 @@
 """Compose research experiments with Hydra and launch each in a fresh process.
 
-The existing CLIs remain the source of argument validation and training behavior.
+The shared train entry point owns argument validation and experiment assembly.
 Keeping TensorFlow in the child also isolates device initialization and RNG state
 between jobs in Hydra's sequential multirun launcher.
 """
@@ -16,11 +16,7 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig, OmegaConf
 
-_RUNNERS = {
-    "imitation": "tf2rl.experiments.cli",
-    "on_policy": "tf2rl.experiments.on_policy",
-    "off_policy": "tf2rl.experiments.off_policy",
-}
+_RUNNERS = ("imitation", "on_policy", "off_policy")
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -54,7 +50,14 @@ def main(config: DictConfig):
     runner = resolved["runner"]
     if runner not in _RUNNERS:
         raise ValueError(f"Unknown runner {runner!r}; choose one of {tuple(_RUNNERS)}")
-    command = [sys.executable, "-m", _RUNNERS[runner], *cli_arguments(resolved["args"])]
+    command = [
+        sys.executable,
+        "-m",
+        "tf2rl.experiments.train",
+        "--runner",
+        runner,
+        *cli_arguments(resolved["args"]),
+    ]
     output = Path(HydraConfig.get().runtime.output_dir)
     OmegaConf.save(OmegaConf.create(resolved), output / "resolved.yaml")
     (output / "command.json").write_text(json.dumps(command, indent=2) + "\n")

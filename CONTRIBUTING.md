@@ -8,7 +8,11 @@ Research changes must preserve the implemented EQN operators, loss functions,
 probability/reward conventions, DAC replay masks and update order. Validate changed
 mathematics and collection boundaries with direct numerical checks and short
 training runs. An execution repair that changes observable behavior
-must be recorded in `docs/modernization.md`.
+must be recorded in `docs/history/modernization.md`.
+
+See `docs/architecture.md` for component ownership and `docs/adding_algorithms.md`
+for extension examples. Training loops belong in `tf2rl/training/`; experiment
+entry points assemble components and call `trainer.run()`.
 
 Run CLI smoke checks, the validation pipeline and a package build before proposing
 changes. Unit-test suites were removed at the project owner's request. Report missing optional runtimes and

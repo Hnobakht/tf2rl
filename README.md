@@ -8,15 +8,15 @@ method is called EQN in the paper.
 The modernization preserves the implemented AIRL/GAIL objectives, EQN operators,
 agent-only gradient penalty, delayed discriminator updates, expert/agent mixing,
 and DAC absorbing-state targets. It does **not** substitute a standard-library
-imitation algorithm. [Scientific details and behavioral repairs](docs/modernization.md)
+imitation algorithm. [Scientific details and behavioral repairs](docs/history/modernization.md)
 explain differences between the executable baseline, the attached paper, and API fixes.
 
 **Validation status:** SAC demonstration generation, dense GAIL and EQN-GAIL have
 working training, evaluation, checkpoint and TensorBoard paths. Unit-test suites
 were removed in the 2026-10-16 cleanup; executable experiment smoke workflows remain.
 See [executed experiments and limits](docs/validation.md) and the
-[cleanup record](docs/cleanup.md). Broader experimental algorithms remain unverified.
-The [2026-10-24 research review](docs/research-audit.md) documents the mathematical
+[cleanup record](docs/history/cleanup.md). Broader experimental algorithms remain unverified.
+The [2026-10-24 research review](docs/history/research-audit.md) documents the mathematical
 conventions, small correctness repairs, and fresh CPU/GPU validation scope, with
 references for PhD researchers extending the methods.
 
@@ -115,7 +115,7 @@ unchanged. Run the Pendulum comparison and view its records:
 The workflow trains SAC demonstrations, then original and sparse EQN-GAIL using
 the same data and imitation seed. The sparse run uses `--eqn-l1 .001
 --eqn-stages 1000,4000 --eqn-prune-threshold .01 --export-equation`.
-See [equation-learning instructions and scientific limits](docs/equation-learning.md)
+See [equation-learning instructions and scientific limits](docs/equation_learning.md)
 for schedule units, checkpoint restoration, exported formulas, numerical diagnostics
 and measured outcomes. No additional dependency is needed.
 Convert exported JSON equations to LaTeX with
@@ -135,7 +135,7 @@ tf2rl-train -m experiment=ppo args.env_name=Pendulum-v1 args.seed=0,1,2
 
 Each Hydra job runs in a fresh process and saves its configuration, launch command,
 checkpoints and metrics in a separate directory. See [experiment configuration and
-extension](docs/experiments.md) for all presets, YAML values, demonstrations,
+extension](docs/history/experiments-before-architecture.md) for all presets, YAML values, demonstrations,
 custom configurations and the existing TensorFlow GPU container workflow.
 
 The common entry point is `eqn-train`, or `python -m tf2rl.experiments.cli`.
@@ -211,7 +211,7 @@ expert trajectories, and a fresh 2,000-step training run with 256 warmup steps.
 Adjust `--expert-path-dir` if your demonstrations are in a different directory.
 TensorBoard records go under `results/debug/eqn-gail-halfcheetah`.
 
-In `tf2rl/networks/eqn.py`, set breakpoints on the `value = tf.math.log(...)` and
+In `tf2rl/networks/equation.py`, set breakpoints on the `value = tf.math.log(...)` and
 `value = (a + 0.1) / (...)` lines inside `EquationLayer.call`. Right-click each
 breakpoint, choose Edit Breakpoint, and use this expression to skip initialization
 and stop on eager discriminator training calls:
@@ -245,7 +245,7 @@ The collector and expert loader share `dac_transitions`:
 | Absorbing self-loop | -1 | Same absorbing state; zero action |
 
 These masks are **not boolean done flags**. SAC, TD3 and DDPG share optional
-absorbing-state rules in `tf2rl/misc/absorbing_ops.py`. Their Bellman targets bootstrap
+absorbing-state rules in `tf2rl/utils/absorbing.py`. Their Bellman targets bootstrap
 terminal/self-loop transitions at zero action, and their actor updates exclude
 self-loops. SAC additionally suppresses next-state entropy on those transitions. One self-loop is stored per true terminal
 transition. If both Gymnasium flags are true, termination wins. Gymnasium's distinction
@@ -282,27 +282,33 @@ AIRL requires stored `logp` values; the loader does not invent missing probabili
 
 ## Project structure and validation
 
-- `tf2rl/algos`: original algorithms, shared research losses, EQN-AIRL/EQN-GAIL and SAC.
-- `tf2rl/networks/eqn.py`: equation operators, scalar output, and reusable networks.
-- `tf2rl/envs`: native wrappers, custom tasks and packaged `assets/`.
-- `tf2rl/experiments`: experiment launchers, component factories, DAC/vector trainers,
-  demonstration I/O and expert sampling; `conf/` holds packaged Hydra presets.
-- `scripts`: executable training workflows and TensorBoard/checkpoint inspection.
-- `legacy/python`: distinct historical algorithms and launchers, excluded from the
-  runtime package. The modern trainers live in `irl_trainer.py` and `airl_trainer.py`;
-  their old `_v2` import paths are compatibility aliases.
-- `legacy/gym`: historical Gym source and assets, excluded from the runtime package.
+The framework is organized around algorithms, data, and three trainers:
+
+- `tf2rl/algos/rl`: RL agents and their update rules.
+- `tf2rl/algos/imitation`: reward learners, including AIRL/GAIL and EQN variants.
+- `tf2rl/networks`: shared actors, critics, layers, encoders and equation networks.
+- `tf2rl/envs`: environment factories, vector backends, wrappers, tasks and assets.
+- `tf2rl/data`: replay, demonstration I/O, expert sampling and DAC transitions.
+- `tf2rl/training`: `OffPolicyTrainer`, `OnPolicyTrainer`, `ImitationTrainer`,
+  collectors, evaluation and checkpoint helpers. **The training loops live here.**
+- `tf2rl/experiments`: configuration and component factories; `train.py` assembles
+  components and calls `trainer.run()`. Hydra presets live in `conf/experiment`.
+- `tf2rl/utils`: shared TensorFlow operations, returns, normalization and logging.
+- `tf2rl/experimental`: older distributed, model-based and on-policy IRL trainers.
+
+Start with [the architecture](docs/architecture.md) and
+[adding an algorithm](docs/adding_algorithms.md). Original imports and console
+commands remain compatible through forwarding modules. Existing experimental
+methods retain their previous validation limits.
 
 ```bash
+python -m tf2rl.experiments.train --runner off_policy --algorithm sac --env-name Pendulum-v1
 python -m compileall -q tf2rl examples scripts
 bash scripts/smoke_examples.sh
 python scripts/run_validation_pipeline.py --steps 300 --warmup 32 --interval 300 --units 32,32 --output results/smoke-pipeline
 python -m build
 ```
 
-Unit tests and the pytest dependency have been removed. Historical validation
-results and limitations remain in [docs/validation.md](docs/validation.md).
-Original upstream documentation is retained in
-[docs/upstream-readme.md](docs/upstream-readme.md). Results from the paper
-cannot be reproduced or claimed verified without its demonstrations, experiment
-configurations, original physics/framework versions and full-length training runs.
+Historical scientific audits and modernization records are retained in
+`docs/history/`. Short smoke runs establish execution, not reproduction of the
+paper's results or long-run learning performance.

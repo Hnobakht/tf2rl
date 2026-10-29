@@ -11,8 +11,8 @@ import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 
-from tf2rl.algos.sac import SAC
-from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
+from tf2rl.algos.rl.sac import SAC
+from tf2rl.envs.wrappers.absorbing import AbsorbingWrapper
 from tf2rl.networks.equation_export import expression_statistics
 
 

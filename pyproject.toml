@@ -33,17 +33,17 @@ dev = ["build>=1.2", "ruff>=0.11"]
 
 [project.scripts]
 tf2rl-train = "tf2rl.experiments.hydra:main"
-eqn-train = "tf2rl.experiments.cli:main"
-ppo-train = "tf2rl.experiments.ppo:main"
-onpolicy-train = "tf2rl.experiments.on_policy:main"
-offpolicy-train = "tf2rl.experiments.off_policy:main"
+eqn-train = "tf2rl.experiments.train:imitation_main"
+ppo-train = "tf2rl.experiments.train:ppo_main"
+onpolicy-train = "tf2rl.experiments.train:on_policy_main"
+offpolicy-train = "tf2rl.experiments.train:off_policy_main"
 
 [tool.setuptools.packages.find]
 include = ["tf2rl*"]
 
 [tool.setuptools.package-data]
 "tf2rl.envs" = ["assets/*.xml", "assets/LICENSE.md"]
-"tf2rl.experiments.conf" = ["*.yaml", "runner/*.yaml", "experiment/*.yaml"]
+"tf2rl.experiments.conf" = ["*.yaml", "experiment/*.yaml", "runner/*.yaml"]
 
 [tool.ruff]
 line-length = 100

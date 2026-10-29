@@ -31,7 +31,7 @@ imitation component construction, and adds a Hydra adapter over the existing
 CLIs. Algorithm and trainer implementations are unchanged. The on-policy
 launcher now closes its environment if output-directory or summary-writer setup
 fails, and still closes it if writer cleanup raises. This affects failed setup
-and cleanup only. See [experiment configuration](experiments.md) for the API,
+and cleanup only. See [experiment configuration](experiments-before-architecture.md) for the API,
 configuration semantics, process isolation, and GPU container commands.
 
 ## Preserved equations and conventions

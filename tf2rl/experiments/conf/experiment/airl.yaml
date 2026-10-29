@@ -1,6 +1,66 @@
 # @package _global_
-defaults:
-- /runner: imitation
-- _self_
+# Values mirror CLI defaults; booleans indicate flag presence.
+runner: imitation
 args:
+  max_steps: 1000000
+  episode_max_steps: 1000
+  n_experiments: 1
+  show_progress: false
+  show_progress_interval: 10000
+  save_model_interval: 50000
+  save_summary_interval: 1000
+  model_dir: null
+  reward_dir: null
+  dir_suffix: ''
+  normalize_obs: false
+  logdir: ${hydra:runtime.output_dir}/artifacts
+  evaluate: false
+  test_interval: 10000
+  show_test_progress: false
+  test_episodes: 5
+  save_test_path: false
+  show_test_images: false
+  save_test_movie: false
+  use_prioritized_rb: false
+  use_nstep_rb: false
+  n_step: 4
+  logging_level: INFO
+  is_debug: false
+  expert_path_dir: null
+  discriminator_noise: 0.15
+  absorbed_state_disable: false
+  n_expert_trajectories: 20
+  random_epoch_n: 0
+  memory_capacity: 2000000
+  lr: 0.0003
+  lr_alpha: 0.0003
+  alpha: 0.2
+  auto_alpha_disable: false
+  draw_reward_function: false
+  units: 128,128
+  xla: false
+  n_warmup: 10000
+  batch_size: 128
+  gpu: -1
+  pixels: false
+  lr_ail: 0.0001
+  batch_size_ail: 32
+  units_ail: null
+  n_training: 1
+  gp_coef: 0.0
+  state_only: false
+  update_delay: null  # Algorithm default: dense AIRL/GAIL=1, EQN=3.
+  dropout: .5,0.
+  v: 2,1
+  exclude: null
+  eqn_l1: 0.0
+  eqn_stages: null
+  eqn_prune_threshold: 0.001
+  export_equation: false
   algorithm: airl
+  generator: sac
+  env_name: ???
+  seed: 0
+  absorbing_indicator: 0.1
+  irl_model_dir: null
+  debug: false

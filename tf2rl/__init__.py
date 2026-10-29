@@ -1,4 +1,4 @@
-"""EQN adversarial imitation learning. Importing does not configure TensorFlow devices."""
+"""TensorFlow research framework for reinforcement and imitation learning. Importing does not configure TensorFlow devices."""
 
 __version__ = "1.2.0"
 
