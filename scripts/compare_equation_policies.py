@@ -11,8 +11,8 @@ import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 
-from tf2rl.algos.sac_irl import SAC_IRL
-from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
+from tf2rl.algos.rl.sac import SAC
+from tf2rl.envs.wrappers.absorbing import AbsorbingWrapper
 from tf2rl.networks.equation_export import expression_statistics
 
 
@@ -76,7 +76,8 @@ def main():
             parser.error('Observation normalization/pixels need a corresponding evaluation transform')
         units = [int(n) for n in config['units'].split(',')]
         tf.keras.utils.set_random_seed(config['seed'])
-        policy = SAC_IRL(state_shape=(4,), action_dim=1, max_action=2., gpu=-1,
+        policy = SAC(state_shape=(4,), action_dim=1, max_action=2., gpu=-1,
+                         critic_layer_norm=False, replay_mask_encoding="dac",
                          actor_units=units, critic_units=units, auto_alpha=config['auto_alpha_disable'],
                          alpha=config['alpha'], is_absorbed_state=config['absorbed_state_disable'])
         checkpoint = tf.train.latest_checkpoint(str(path))

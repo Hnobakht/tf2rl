@@ -9,9 +9,9 @@ import numpy as np
 import tensorflow as tf
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
-from tf2rl.algos.airl_eql import AIRL_EQL
-from tf2rl.algos.gail_eql import GAIL_EQL
-from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
+from tf2rl.algos.imitation.airl_eqn import AIRL_EQL
+from tf2rl.algos.imitation.gail_eqn import GAIL_EQL
+from tf2rl.envs.wrappers.absorbing import AbsorbingWrapper
 from tf2rl.networks.equation_export import evaluate_equation, expression_statistics
 
 

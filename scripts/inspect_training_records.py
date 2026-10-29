@@ -21,7 +21,10 @@ def inspect_run(path):
     args = json.loads((path / 'args.txt').read_text())
     algorithm = args['algorithm']
     events = EventAccumulator(str(path), size_guidance={'tensors': 0}).Reload()
-    required = {'SAC/actor_loss', 'SAC/critic_Q1_loss', 'Common/average_test_return'}
+    generator = args.get('generator', 'sac').upper()
+    actor_tag = generator + '/actor_loss'
+    critic_tag = generator + ('/critic_Q1_loss' if generator == 'SAC' else '/critic_loss')
+    required = {actor_tag, critic_tag, 'Common/average_test_return'}
     if algorithm != 'sac':
         discriminator = {'gail': 'GAIL', 'eqn-gail': 'GAIL_EQL',
                          'airl': 'AIRL', 'eqn-airl': 'AIRL_EQL'}[algorithm]
@@ -41,14 +44,16 @@ def inspect_run(path):
         if tag == 'Common/average_test_return':
             metrics[tag]['curve'] = [[record.step, value] for record, value in zip(records, values)]
     final_summary_step = args['max_steps'] // args['save_summary_interval'] * args['save_summary_interval']
-    if metrics['SAC/actor_loss']['final_step'] != final_summary_step:
+    if metrics[actor_tag]['final_step'] != final_summary_step:
         raise ValueError(f'{path}: final scheduled actor summary is missing')
     checkpoint = tf.train.latest_checkpoint(str(path))
     if checkpoint is None:
         raise ValueError(f'{path}: no policy checkpoint')
     variables = [name for name, _ in tf.train.list_variables(checkpoint)]
-    for critic in ('qf1_target', 'qf2_target'):
-        if not any(f'policy/{critic}/hidden_0/' in name for name in variables):
+    target_paths = (('qf1_target/hidden_0', 'qf2_target/hidden_0') if generator == 'SAC'
+                    else ('critic_target/l1', 'actor_target/l1'))
+    for target in target_paths:
+        if not any(f'policy/{target}/' in name for name in variables):
             raise ValueError(f'{path}: target critic hidden weights missing from checkpoint')
     if algorithm != 'sac':
         irl_checkpoint = tf.train.latest_checkpoint(str(path / 'irl'))

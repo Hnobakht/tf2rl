@@ -12,11 +12,11 @@ import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 
-from tf2rl.algos.airl_eql import AIRL_EQL
-from tf2rl.algos.gail_eql import GAIL_EQL
-from tf2rl.envs.absorbing_wrapper import AbsorbingWrapper
-from tf2rl.misc.dac_ops import dac_transitions
-from tf2rl.networks.eqn import EquationLayer, EquationNetwork
+from tf2rl.algos.imitation.airl_eqn import AIRL_EQL
+from tf2rl.algos.imitation.gail_eqn import GAIL_EQL
+from tf2rl.envs.wrappers.absorbing import AbsorbingWrapper
+from tf2rl.data.transitions import dac_transitions
+from tf2rl.networks.equation import EquationLayer, EquationNetwork
 from tf2rl.networks.equation_export import evaluate_equation, extract_equation, save_equation
 
 

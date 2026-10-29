@@ -1,35 +1,7 @@
-from gymnasium.spaces import Discrete, Box
-
-
-def is_discrete(space):
-    """Return whether an action space is Discrete; reject spaces other than Discrete or Box."""
-    if isinstance(space, Discrete):
-        return True
-    elif isinstance(space, Box):
-        return False
-    else:
-        raise NotImplementedError
-
-
-def get_act_dim(action_space):
-    """Return the number of discrete actions or the continuous action-vector dimension."""
-    if isinstance(action_space, Discrete):
-        return action_space.n
-    elif isinstance(action_space, Box):
-        return action_space.low.size
-    else:
-        raise NotImplementedError
-
-
-def is_mujoco_env(env):
-    """Return whether the environment uses a MuJoCo base environment."""
-    try:
-        from gymnasium.envs.mujoco import MujocoEnv
-    except ImportError:
-        return False
-    return isinstance(env.unwrapped, MujocoEnv)
-
-
-def is_atari_env(env):
-    """Return whether the environment is an Atari environment."""
-    return hasattr(env.unwrapped, "ale")
+"""Compatibility imports; implementation lives in ``tf2rl.envs.spaces``."""
+from tf2rl.envs.spaces import (
+    is_discrete as is_discrete,
+    get_act_dim as get_act_dim,
+    is_mujoco_env as is_mujoco_env,
+    is_atari_env as is_atari_env,
+)

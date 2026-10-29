@@ -1,0 +1,45 @@
+# @package _global_
+# Values mirror CLI defaults; booleans indicate flag presence.
+runner: off_policy
+args:
+  algorithm: ddpg
+  env_name: ???
+  env_backend: gymnasium
+  num_envs: 1
+  gpu: -1
+  env_gpu: 0
+  cpu_threads: 1
+  cpu_inter_threads: 1
+  seed: 0
+  max_steps: 1000000
+  collection_steps: 16
+  batch_size: 256
+  memory_capacity: 1000000
+  n_warmup: 10000
+  updates_per_transition: 1.0
+  units:
+  - 64
+  - 64
+  learning_rate: 0.0003
+  alpha: 0.2
+  fixed_alpha: false
+  xla: false
+  sigma: 0.1
+  absorbing: false
+  absorbing_indicator: 0.1
+  max_episode_steps: null
+  env_kwargs: {}
+  nconmax: 64
+  njmax: 128
+  checkpoint_interval: 100000
+  eval_interval: 100000
+  eval_episodes: 3
+  eval_num_envs: 4
+  eval_env_backend: gymnasium
+  save_expert: false
+  expert_episodes: 20
+  expert_dir: null
+  stochastic_expert: false
+  model_dir: null
+  evaluate: false
+  output: ${hydra:runtime.output_dir}/artifacts
