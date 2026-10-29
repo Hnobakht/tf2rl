@@ -20,11 +20,27 @@ from tf2rl.utils.normalization import EmpiricalNormalizer
 
 
 def with_summary_writer(method):
-    """Keep each trainer's writer and step scoped to its own execution."""
+    """Keep each trainer's writer and step scoped to its own execution.
+
+    Args:
+        method (callable): Trainer method to execute inside its TensorBoard writer context.
+
+    Returns:
+        callable: Wrapped method preserving its metadata and return value while selecting the
+            trainer summary writer.
+    """
 
     @wraps(method)
     def wrapped(self, *args, **kwargs):
-        """Call the trainer operation inside its TensorBoard summary-writer context."""
+        """Call the trainer operation inside its TensorBoard summary-writer context.
+
+        Args:
+            *args (tuple): Positional arguments passed unchanged to the decorated trainer method.
+            **kwargs (dict): Keyword arguments passed unchanged to the decorated trainer method.
+
+        Returns:
+            object: The decorated trainer method return value, unchanged.
+        """
         with self.writer.as_default(step=0):
             return method(self, *args, **kwargs)
 
@@ -47,7 +63,35 @@ class OffPolicyTrainer:
         seed=0,
         replay_buffer=None,
     ):
-        """Configure training, replay storage, evaluation, and checkpoint handling."""
+        """Configure training, replay storage, evaluation, and checkpoint handling.
+
+        Args:
+            policy (Policy): Agent supplying action selection and learning operations.
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            args (argparse.Namespace or dict or None): Scalar trainer settings, or vector-run options.
+                None permits direct vector collect/update calls without a configured run.
+            test_env (gym.Env or None): Independent evaluation environment; must differ from the
+                training instance.
+            is_episodic (bool): Historical scalar episodic-mode field; absorbing semantics come from the
+                agent configuration.
+            updates_per_transition (float): Gradient minibatch updates budgeted per physical transition
+                after random warmup.
+            absorbing (bool): Enable DAC absorbing-state transitions and their corresponding
+                interpretation.
+            seed (int or None): Random seed; None leaves initialization to the underlying random
+                generator.
+            replay_buffer (ReplayBuffer or None): Optional externally allocated replay buffer; None
+                creates one for the agent.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            ValueError: Training and evaluation must use separate environment instances. Absorbing-state
+                training requires an absorbing wrapper and DAC masks. Absorbing-state training requires
+                unnormalized one-step transitions. Evaluation requires --model-dir.
+        """
         self._vector = hasattr(env, "num_envs")
         self.args = args
         self._record_logp = False
@@ -120,18 +164,45 @@ class OffPolicyTrainer:
             raise
 
     def _horizon(self, env):
-        """Return the configured episode limit or the environment time limit."""
+        """Return the configured episode limit or the environment time limit.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+
+        Returns:
+            int: Effective scalar episode horizon, capped by the environment time limit when available.
+        """
         configured = self._episode_max_steps
         limit = env.spec.max_episode_steps if env.spec is not None else None
         return min(configured, limit) if limit is not None else configured
 
     @staticmethod
     def _action(result):
-        """Extract the action from a policy result, accepting either an action or a tuple."""
+        """Extract the action from a policy result, accepting either an action or a tuple.
+
+        Args:
+            result (array_like or tuple): Action-selection result, optionally paired with action log
+                probabilities.
+
+        Returns:
+            array_like: The action component, removing a tuple of auxiliary action diagnostics when
+                present.
+        """
         return result if not isinstance(result, tuple) else result[0]
 
     def _policy_observation(self, obs, update=False):
-        """Return the observation expected by the policy, optionally stripping the DAC indicator."""
+        """Optionally update scalar observation statistics and return the policy input
+        observation.
+
+        Args:
+            obs (array_like): Current observation, or batch of observations with a leading batch axis.
+            update (bool): Update running statistics from the supplied observations before normalizing.
+
+        Returns:
+            np.ndarray: Observation in policy coordinates, optionally updating the observation
+                normalizer first.
+        """
         if not self._normalize_obs:
             return obs
         if update:
@@ -139,7 +210,14 @@ class OffPolicyTrainer:
         return self._obs_normalizer(obs, update=False)
 
     def _set_from_args(self, args):
-        """Copy trainer settings from the parsed command-line arguments."""
+        """Copy trainer settings from the parsed command-line arguments.
+
+        Args:
+            args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+        Returns:
+            None.
+        """
         self._max_steps = args.max_steps
         self._episode_max_steps = (
             args.episode_max_steps if args.episode_max_steps is not None else args.max_steps
@@ -167,11 +245,28 @@ class OffPolicyTrainer:
 
     @staticmethod
     def get_argument(parser=None):
+        """Add shared scalar trainer arguments to an existing or new parser.
+
+        Args:
+            parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+        Returns:
+            argparse.ArgumentParser: Parser extended with the supported component options.
+        """
         from tf2rl.experiments.config import add_trainer_arguments
 
         return add_trainer_arguments(parser)
 
     def _set_check_point(self, model_dir):
+        """Create the policy checkpoint manager and restore weights when model_dir is supplied.
+
+        Args:
+            model_dir (str or Path or None): Directory containing policy weights to restore; None starts
+                with current initialization.
+
+        Returns:
+            None.
+        """
         self._checkpoint, self.checkpoint_manager = policy_checkpoint(
             self._policy, self._output_dir
         )
@@ -183,10 +278,34 @@ class OffPolicyTrainer:
             self._checkpoint.restore(self._latest_path_ckpt)
 
     def __call__(self):
+        """Execute the configured training or evaluation run.
+
+        Returns:
+            object: Result of run(): scalar replay buffer, scalar evaluation pair, or vector-run summary
+                depending on configuration.
+        """
         return self.run()
 
     def run(self, args=None, *, evaluation_env=None, restored=None):
-        """Collect, update, evaluate, and save. Imitation overrides update()."""
+        """Collect, update, evaluate, and save. Imitation overrides update().
+
+        Scalar settings come from construction. Vector settings come from off_policy_parser and
+        may be supplied here. The run advances environment state, updates network parameters,
+        and writes configured checkpoints and metrics.
+
+        Args:
+            args (argparse.Namespace or None): Validated vector off-policy options; None reuses
+                constructor options. Scalar runs use the constructor configuration.
+            evaluation_env (gym.vector.VectorEnv or None): Independent vector environment used for
+                evaluation and expert export.
+            restored (str or None): Checkpoint prefix previously restored by experiment assembly,
+                recorded in the run summary.
+
+        Returns:
+            cpprb.ReplayBuffer or tuple[float, float] or dict: Scalar training returns its replay
+                buffer; scalar evaluation mode returns mean return/length; vector training returns a
+                run-summary dictionary.
+        """
         if self._vector:
             self.args = args or self.args
             self._test_env = evaluation_env
@@ -214,6 +333,11 @@ class OffPolicyTrainer:
             return self.replay_buffer
 
     def _prepare_single(self):
+        """Allocate scalar replay with the configured priority and N-step storage options.
+
+        Returns:
+            None.
+        """
         self.replay_buffer = get_replay_buffer(
             self._policy,
             self._env,
@@ -223,10 +347,32 @@ class OffPolicyTrainer:
         )
 
     def _store_single(self, rows, step):
+        """Insert the collected physical and synthetic transition rows into scalar replay.
+
+        Args:
+            rows (sequence[dict]): Physical replay rows and any synthetic absorbing self-loops to
+                insert.
+            step (int or None): Physical environment-step counter used for warmup, summaries, or
+                checkpoint numbering. This implementation does not read this argument.
+
+        Returns:
+            None.
+        """
         for row in rows:
             self.replay_buffer.add(**row)
 
     def collect(self, step=None):
+        """Collect one scalar or vector step, store replay rows, and advance collection
+        counters.
+
+        Args:
+            step (int or None): Required scalar environment-step count for warmup and scheduling; unused
+                in vector mode.
+
+        Returns:
+            dict: Transition/episode statistics from one collection step; the collected rows are
+                inserted into replay and learning budgets are advanced.
+        """
         if self._vector:
             rows, stats = self.collector.collect()
             self.replay_buffer.add(**rows)
@@ -246,10 +392,27 @@ class OffPolicyTrainer:
         return stats
 
     def collect_step(self):
-        """Compatibility spelling for vector collection."""
+        """Compatibility spelling for vector collection.
+
+        Returns:
+            dict: Statistics returned by collect() after one environment batch has been stored.
+        """
         return self.collect()
 
     def update(self, step=None, record_summaries=False):
+        """Run eligible replay minibatch updates and maintain priorities, summaries, and the
+        vector update budget.
+
+        Args:
+            step (int or None): Required scalar environment-step count for summary scheduling; unused in
+                vector mode.
+            record_summaries (bool): Enable summaries for the selected update; scalar imitation uses its
+                step-based schedule.
+
+        Returns:
+            dict or None: Vector mode returns updates and mean_update_diagnostic; scalar mode updates
+                the agent and summaries in place and returns None.
+        """
         if self._vector:
             return self._update_vector(record_summaries)
         samples = self.replay_buffer.sample(self._policy.batch_size)
@@ -269,9 +432,24 @@ class OffPolicyTrainer:
             self.replay_buffer.update_priorities(samples["indexes"], np.abs(errors) + 1e-6)
 
     def _finish_single(self):
+        """Provide a no-op scalar-run finalization hook for subclasses.
+
+        Returns:
+            None.
+        """
         pass
 
     def _periodic(self, step):
+        """Run scheduled scalar evaluation and checkpoint saving at the supplied environment
+        step.
+
+        Args:
+            step (int or None): Physical environment-step counter used for warmup, summaries, or
+                checkpoint numbering.
+
+        Returns:
+            None.
+        """
         if step % self._test_interval == 0:
             reward, length = self.evaluate_policy(step)
             tf.summary.scalar("Common/average_test_return", reward)
@@ -282,15 +460,48 @@ class OffPolicyTrainer:
             self.save(step)
 
     def save(self, step=None):
+        """Save policy state with the configured TensorFlow checkpoint manager, if present.
+
+        Args:
+            step (int or None): Physical environment-step counter used for warmup, summaries, or
+                checkpoint numbering.
+
+        Returns:
+            str or None: Saved checkpoint prefix returned by the TensorFlow manager. A vector run must
+                configure its manager before this method is called.
+        """
         if self._vector:
             return self.checkpoint_manager.save(checkpoint_number=step)
         return self.checkpoint_manager.save()
 
     @with_summary_writer
     def evaluate_policy(self, total_steps):
+        """Evaluate the scalar policy and record configured summaries, demonstrations, or
+        videos.
+
+        Args:
+            total_steps (int): Physical environment-step count used to label evaluation summaries and
+                trajectory files.
+
+        Returns:
+            tuple[float, float]: Mean undiscounted episode return and mean episode length.
+        """
         return evaluate_policy(self, total_steps)
 
     def evaluate(self, total_steps=0):
+        """Evaluate the configured scalar or vector policy on its independent test environment.
+
+        Args:
+            total_steps (int): Physical environment-step count used to label evaluation summaries and
+                trajectory files.
+
+        Returns:
+            dict or tuple[float, float]: Vector evaluation statistics, or the scalar mean-return/mean-
+                length pair.
+
+        Raises:
+            ValueError: Vector evaluation requires a separate evaluation_env.
+        """
         if self._vector:
             if self._test_env is None:
                 raise ValueError("Vector evaluation requires a separate evaluation_env")
@@ -300,9 +511,20 @@ class OffPolicyTrainer:
         return self.evaluate_policy(total_steps)
 
     def evaluate_policy_continuously(self):
+        """Perform one scalar evaluation pass using the compatibility evaluation entry point.
+
+        Returns:
+            tuple[float, float]: Mean return and length from one evaluation pass; this compatibility
+                method does not loop.
+        """
         return self.evaluate_policy(0)
 
     def close(self):
+        """Close training/evaluation environments and any configured summary writer.
+
+        Returns:
+            None.
+        """
         with ExitStack() as resources:
             if self.writer is not None:
                 resources.callback(self.writer.close)
@@ -311,7 +533,19 @@ class OffPolicyTrainer:
                 resources.callback(self._test_env.close)
 
     def _update_vector(self, record_summaries=False):
-        """Spend accumulated update credit; return counts and a finite diagnostic."""
+        """Spend accumulated update credit; return counts and a finite diagnostic.
+
+        Args:
+            record_summaries (bool): Enable summaries for the selected update; scalar imitation uses its
+                step-based schedule.
+
+        Returns:
+            dict: Number of updates performed and mean_update_diagnostic, which is None when no
+                diagnostic was produced.
+
+        Raises:
+            FloatingPointError: Nonfinite off-policy learner diagnostic.
+        """
         if self.replay_buffer.get_stored_size() < self.policy.batch_size:
             return {"updates": 0, "mean_update_diagnostic": None}
         count = int(self.update_credit + 1e-9)
@@ -335,6 +569,23 @@ class OffPolicyTrainer:
         }
 
     def _run_vector(self, args, evaluation_env, restored):
+        """Run the vector collect/update loop, save checkpoints, and optionally evaluate the
+        trained policy.
+
+        Args:
+            args (argparse.Namespace): Parsed experiment options used to configure this operation.
+            evaluation_env (gym.vector.VectorEnv or None): Independent vector environment used for
+                evaluation and expert export.
+            restored (str or None): Checkpoint prefix previously restored by experiment assembly,
+                recorded in the run summary.
+
+        Returns:
+            dict: Run summary containing environment/learner counters, timing, configuration,
+                checkpoint, and optional evaluation results.
+
+        Raises:
+            ValueError: run() requires experiment options; collect()/update() can be used directly.
+        """
         if args is None:
             raise ValueError(
                 "run() requires experiment options; collect()/update() can be used directly"

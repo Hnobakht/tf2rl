@@ -15,12 +15,39 @@ from tf2rl.training.imitation import ImitationTrainer
 
 
 def _csv(value, cast):
-    """Parse comma-separated values using the requested conversion function."""
+    """Parse comma-separated values using the requested conversion function.
+
+    Args:
+        value (array_like): Value to convert, normalize, or store in the representation required by
+            this operation.
+        cast (callable): Conversion applied to each comma-separated value.
+
+    Returns:
+        list: Comma-separated values stripped of surrounding whitespace and converted using cast.
+    """
     return [cast(item.strip()) for item in value.split(",")]
 
 
 def make_imitation_agent(args, env, *, imitation, absorbing):
-    """Build an off-policy generator; SAC retains the original launcher defaults."""
+    """Build an off-policy generator; SAC retains the original launcher defaults.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+        env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+            spaces, and interaction state.
+        imitation (bool): Select the imitation recipe and its observation/replay conventions.
+        absorbing (bool): Enable DAC absorbing-state transitions and their corresponding
+            interpretation.
+
+    Returns:
+        OffPolicyAgent: Initialized SAC, TD3, or DDPG generator with the selected imitation/replay
+            conventions.
+
+    Raises:
+        ConfigurationError: --generator selects an imitation policy; use offpolicy-train for RL.
+            AIRL requires action log probabilities; select --generator sac. --xla currently supports
+            SAC.
+    """
     from tf2rl.algos.rl.sac import SAC
     from tf2rl.algos.rl.td3 import TD3
     from tf2rl.algos.rl.ddpg import DDPG
@@ -75,7 +102,16 @@ def make_imitation_agent(args, env, *, imitation, absorbing):
 
 
 def make_discriminator(args, env):
-    """Select the dense or equation AIRL/GAIL discriminator."""
+    """Select the dense or equation AIRL/GAIL discriminator.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+        env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+            spaces, and interaction state.
+
+    Returns:
+        RewardLearner: Initialized AIRL, GAIL, EQN-AIRL, or EQN-GAIL reward learner.
+    """
     from tf2rl.algos.imitation.airl import AIRL
     from tf2rl.algos.imitation.airl_eqn import AIRL_EQL
     from tf2rl.algos.imitation.gail import GAIL
@@ -121,7 +157,24 @@ def make_discriminator(args, env):
 
 
 def make_imitation_trainer(args, policy, irl, env, test_env, absorbing):
-    """Load demonstrations and select the trainer required by the discriminator."""
+    """Load demonstrations and select the trainer required by the discriminator.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+        policy (Policy): Agent supplying action selection and learning operations.
+        irl (RewardLearner or None): Learned reward/discriminator component; its requirements
+            determine whether action densities are needed.
+        env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+            spaces, and interaction state.
+        test_env (gym.Env or None): Independent evaluation environment; must differ from the
+            training instance.
+        absorbing (bool): Enable DAC absorbing-state transitions and their corresponding
+            interpretation.
+
+    Returns:
+        ImitationTrainer: Trainer assembled with restored expert data and the requested
+            collection/update settings.
+    """
     data = restore_latest_n_traj(
         args.expert_path_dir,
         n_path=args.n_expert_trajectories,
@@ -165,7 +218,36 @@ def make_off_policy_agent(
     sigma=0.1,
     xla=False,
 ):
-    """Construct an existing algorithm without embedding it in the environment backend."""
+    """Construct an existing algorithm without embedding it in the environment backend.
+
+    Args:
+        algorithm (str or None): Algorithm identifier or default selection for the experiment
+            recipe.
+        observation_space (gym.Space): Single-environment observation space used for model
+            construction.
+        action_space (gym.Space): Single-environment action space used for validation or model
+            construction.
+        absorbing (bool): Enable DAC absorbing-state transitions and their corresponding
+            interpretation.
+        gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+        units (sequence[int]): Hidden-layer widths in forward order.
+        learning_rate (float): Learning rate supplied to the constructed agent optimizers.
+        batch_size (int): Number of transitions in each learning or sampling minibatch.
+        memory_capacity (int): Maximum number of transitions retained in replay.
+        n_warmup (int): Number of physical transitions collected with random actions before
+            learning.
+        auto_alpha (bool): Learn the SAC entropy temperature instead of keeping alpha fixed.
+        alpha (float): Entropy-temperature coefficient used by SAC.
+        sigma (float): Standard deviation of Gaussian exploration noise.
+        xla (bool): Request XLA compilation for the supported SAC factory.
+
+    Returns:
+        OffPolicyAgent: Validated continuous-action SAC, TD3, or DDPG agent.
+
+    Raises:
+        ValueError: This entry point requires vector Box observations and controls. Existing actors
+            require uniform symmetric action bounds. XLA compilation is currently exposed for SAC.
+    """
     if (
         not isinstance(observation_space, gym.spaces.Box)
         or len(observation_space.shape) != 1
@@ -233,6 +315,17 @@ def register_on_policy_algorithm(name, factory, *, default_epochs=1):
     Factories receive the standard VPG-style model/training keywords and optional
     policy-specific keywords. They must return an OnPolicyAgent implementing its
     tensor interface. Registration before main() also makes the name a CLI choice.
+
+    Args:
+        name (str): Name assigned to the model, operation, or registered component.
+        factory (callable): Constructor registered for the selected agent or environment adapter.
+        default_epochs (int): Default number of optimization epochs per on-policy rollout.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: Expected a unique algorithm name, callable factory and positive epochs.
     """
     if not name or name in _ALGORITHMS or not callable(factory) or default_epochs < 1:
         raise ValueError("Expected a unique algorithm name, callable factory and positive epochs")
@@ -240,12 +333,28 @@ def register_on_policy_algorithm(name, factory, *, default_epochs=1):
 
 
 def _ppo(**kwargs):
+    """Construct the registered PPO implementation lazily.
+
+    Args:
+        **kwargs (dict): Additional keyword arguments forwarded to the wrapped operation.
+
+    Returns:
+        PPO: PPO agent constructed from the forwarded keyword options.
+    """
     from tf2rl.algos.rl.ppo import PPO
 
     return PPO(**kwargs)
 
 
 def _vpg(**kwargs):
+    """Construct the registered VPG implementation lazily.
+
+    Args:
+        **kwargs (dict): Additional keyword arguments forwarded to the wrapped operation.
+
+    Returns:
+        VPG: VPG agent constructed from the forwarded keyword options.
+    """
     from tf2rl.algos.rl.vpg import VPG
 
     return VPG(**kwargs)
@@ -268,7 +377,35 @@ def make_on_policy_agent(
     gpu=-1,
     policy_kwargs=None,
 ):
-    """Create a registered on-policy agent using single-world environment spaces."""
+    """Create a registered on-policy agent using single-world environment spaces.
+
+    Args:
+        algorithm (str or None): Algorithm identifier or default selection for the experiment
+            recipe.
+        observation_space (gym.Space): Single-environment observation space used for model
+            construction.
+        action_space (gym.Space): Single-environment action space used for validation or model
+            construction.
+        horizon (int): Number of transitions in one on-policy rollout batch; must be divisible by
+            batch_size.
+        batch_size (int): Number of transitions in each learning or sampling minibatch.
+        epochs (int or None): Optimization epochs per rollout; None selects the registered algorithm
+            default.
+        units (sequence[int]): Hidden-layer widths in forward order.
+        learning_rate (float): Learning rate supplied to the constructed agent optimizers.
+        gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+        policy_kwargs (dict or None): Algorithm-specific constructor options overriding the standard
+            factory settings.
+
+    Returns:
+        OnPolicyAgent: Registered agent configured for the supplied observation/action spaces and
+            rollout size.
+
+    Raises:
+        ValueError: The on-policy launcher requires vector Box observations. Actors require Discrete
+            or uniform symmetric vector Box actions.
+        TypeError: Registered factories must return an OnPolicyAgent.
+    """
     if algorithm not in _ALGORITHMS:
         raise ValueError(f"Unknown on-policy algorithm {algorithm!r}")
     if not isinstance(observation_space, gym.spaces.Box) or len(observation_space.shape) != 1:
@@ -312,6 +449,10 @@ def preload_imitation_algorithms():
 
     Some historical models have initializer objects as constructor defaults.
     Vector recipes intentionally import models after seeding instead.
+
+    Returns:
+        tuple[module, ...]: Imported AIRL, EQN-GAIL, SAC, EQN-AIRL, DDPG, and TD3 modules, in legacy
+            initialization order.
     """
     from tf2rl.algos.imitation import airl, gail_eqn
     from tf2rl.algos.rl import sac

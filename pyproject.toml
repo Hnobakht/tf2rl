@@ -43,7 +43,7 @@ include = ["tf2rl*"]
 
 [tool.setuptools.package-data]
 "tf2rl.envs" = ["assets/*.xml", "assets/LICENSE.md"]
-"tf2rl.experiments.conf" = ["*.yaml", "experiment/*.yaml", "runner/*.yaml"]
+"tf2rl.experiments.conf" = ["*.yaml", "experiment/*.yaml"]
 
 [tool.ruff]
 line-length = 100

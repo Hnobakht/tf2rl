@@ -149,3 +149,34 @@ Matched-checkpoint records and pipeline metrics are under
 `.work/architecture-refactor/`. These checks establish compatibility for the
 exercised short CPU paths. GPU/MJWarp execution and the older experimental methods
 were not revalidated in this refactor.
+
+## Architecture cleanup (2026-10-29)
+
+Removed 108 Python files outside the agreed layout: old import/launcher shims,
+obsolete examples and package markers, the duplicate scalar on-policy trainer,
+the unused dm_control viewer, and `setup.py`. Removed the three old Hydra runner
+templates and three hyphenated preset aliases. The canonical algorithm
+implementations and the experimental methods included in the design remain in
+their designated packages.
+
+Scripts, benchmark commands, debugger configurations and current documentation
+now use `tf2rl.experiments.train` with an explicit runner. Playback is available
+through `python -m tf2rl.training.evaluation`. The editable installation was
+refreshed so local console scripts import the current entry points. Console
+wrappers also discard programmatic result objects so successful training exits
+with status zero.
+
+Validation after pruning:
+
+- No runtime references to deleted modules remain; all local Python import paths
+  resolve. Compilation, static checks and example smoke commands passed.
+- Short SAC and PPO example runs completed. Installed SAC, PPO and expert console
+  commands completed with zero exit status; the on-policy command and viewer
+  displayed help successfully.
+- All ten canonical Hydra presets composed, and an installed Hydra PPO job ran.
+- The 300-step SAC → GAIL → EQN-GAIL pipeline completed with finite metrics.
+- Wheel and source archive builds passed; neither contains any deleted Python
+  path or removed Hydra template. Packaging uses `pyproject.toml` directly.
+
+Local pipeline records and the removal inventory are under
+`.work/architecture-prune/`. GPU/MJWarp execution was not rerun for this cleanup.

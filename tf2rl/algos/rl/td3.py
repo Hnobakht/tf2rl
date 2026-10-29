@@ -11,7 +11,19 @@ from tf2rl.utils.tensorflow import update_target_variables
 class Actor(tf.keras.Model):
     """Deterministic policy mapping state vectors to bounded continuous actions."""
     def __init__(self, state_shape, action_dim, max_action, units=(400, 300), name="Actor"):
-        """Build the deterministic policy and set its continuous action bounds."""
+        """Build the deterministic policy and set its continuous action bounds.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            max_action (float): Symmetric continuous-action bound or output scale.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.TruncatedNormal(mean=0., stddev=2e-3)
@@ -25,7 +37,16 @@ class Actor(tf.keras.Model):
 
     @tf.function
     def call(self, inputs):
-        """Return bounded continuous actions for the input observation batch."""
+        """Return bounded continuous actions for the input observation batch.
+
+        Args:
+            inputs (tf.Tensor): Observation batch shaped (batch, *state_shape); pixel models accept
+                image observations.
+
+        Returns:
+            tf.Tensor: Deterministic continuous actions shaped (batch, action_dim), bounded by
+                max_action.
+        """
         features = tf.nn.relu(self.l1(inputs))
         features = tf.nn.relu(self.l2(features))
         features = self.l3(features)
@@ -35,7 +56,19 @@ class Actor(tf.keras.Model):
 class Critic(tf.keras.Model):
     """Action-value network for deterministic continuous-control agents."""
     def __init__(self, state_shape, action_dim, units=(400, 300), name="Critic"):
-        """Build the state-action value network and initialize its parameters."""
+        """Build the state-action value network and initialize its parameters.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector. This
+                implementation does not read this argument.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.glorot_uniform()
@@ -50,7 +83,16 @@ class Critic(tf.keras.Model):
 
 
     def call(self, states, actions):
-        """Return the two Q-value estimates for each state-action pair."""
+        """Return the two Q-value estimates for each state-action pair.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Independent twin-Q estimates, each shaped (batch,).
+        """
         xu = tf.concat((states, actions), axis=1)
 
         x1 = tf.nn.relu(self.l1(xu))
@@ -66,7 +108,20 @@ class Critic(tf.keras.Model):
 class Actor_pixels(tf.keras.Model):
     """Deterministic policy that extracts features from pixel observations."""
     def __init__(self, state_shape, action_dim, max_action, units=(400, 300), name="Actor"):
-        """Build the image encoder and deterministic action head."""
+        """Build the image encoder and deterministic action head.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            max_action (float): Symmetric continuous-action bound or output scale.
+            units (sequence[int]): Hidden-layer widths in forward order. This implementation does not
+                read this argument.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.TruncatedNormal(mean=0., stddev=1e-4)
@@ -84,7 +139,16 @@ class Actor_pixels(tf.keras.Model):
 
     @tf.function
     def call(self, inputs):
-        """Return bounded continuous actions for the input observation batch."""
+        """Return bounded continuous actions for the input observation batch.
+
+        Args:
+            inputs (tf.Tensor): Observation batch shaped (batch, *state_shape); pixel models accept
+                image observations.
+
+        Returns:
+            tf.Tensor: Deterministic continuous actions shaped (batch, action_dim), bounded by
+                max_action.
+        """
         print("[DEBUG] Input: " + str(inputs.shape) + " Dtype: " + str(inputs.dtype) + "[call Actor_pixels TD3]")
         features = tf.cast(inputs/255, dtype=tf.float32)
 
@@ -100,7 +164,19 @@ class Actor_pixels(tf.keras.Model):
 class Critic_pixels(tf.keras.Model):
     """Twin action-value network using pixel observations and continuous actions."""
     def __init__(self, state_shape, action_dim, units=(400, 300), name="Critic"):
-        """Build convolutional state features and twin Q-value heads."""
+        """Build convolutional state features and twin Q-value heads.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector. This
+                implementation does not read this argument.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.glorot_uniform()
@@ -130,7 +206,16 @@ class Critic_pixels(tf.keras.Model):
 
     @tf.function
     def call(self, states, actions):
-        """Return the two Q-value estimates for each state-action pair."""
+        """Return the two Q-value estimates for each state-action pair.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Independent twin-Q estimates, each shaped (batch,).
+        """
         print("[DEBUG] Input state: " + str(states.shape) + " Dtype: " + str(states.dtype) + "[call Critic_pixels TD3]")
         features_cnn = tf.cast(states/255, dtype=tf.float32)
 
@@ -180,7 +265,34 @@ class TD3(DDPG):
             is_pixels = False,
             is_absorbed_state=False,
             **kwargs):
-        """Configure the agent's networks, optimizers, and training hyperparameters."""
+        """Configure the agent's networks, optimizers, and training hyperparameters.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            name (str): Name assigned to the model, operation, or registered component.
+            max_action (float): Symmetric continuous-action bound or output scale.
+            lr_actor (float): Actor optimizer learning rate.
+            lr_critic (float): Critic optimizer learning rate.
+            actor_units (sequence[int]): Widths of the actor hidden layers.
+            critic_units (sequence[int]): Widths of the critic hidden layers.
+            sigma (float): Standard deviation of Gaussian exploration noise.
+            tau (float): Target-network interpolation coefficient: target <- (1-tau)*target +
+                tau*online; 1 copies all weights.
+            n_warmup (int): Number of physical transitions collected with random actions before
+                learning.
+            memory_capacity (int): Maximum number of transitions retained in replay.
+            actor_update_freq (int): Number of critic updates between TD3 actor/target updates.
+            policy_noise (float): Standard deviation of TD3 target-policy smoothing noise.
+            noise_clip (float): Absolute bound on TD3 target-policy noise.
+            is_pixels (bool): Select the image-observation network path.
+            is_absorbed_state (bool): Use DAC absorbing Bellman targets and omit synthetic loops from
+                actor losses.
+            **kwargs (dict): Additional keyword arguments forwarded to DDPG construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         OffPolicyAgent.__init__(self,name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
         self._is_absorbed_state = is_absorbed_state
         self._replay = ReplaySemantics(is_absorbed_state)
@@ -220,7 +332,20 @@ class TD3(DDPG):
         self._initialize_networks(state_shape, action_dim)
 
     def get_action(self, state, test=False, tensor=False):
-        """Select an action for one observation or a batch; test mode disables exploration."""
+        """Select an action for one observation or a batch; test mode disables exploration.
+
+        Args:
+            state (np.ndarray or tf.Tensor): One observation or batch; tensor=False requires NumPy
+                input, while tensor=True permits tensor input.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+            tensor (bool): Return a TensorFlow tensor instead of converting the action to NumPy, where
+                implemented.
+
+        Returns:
+            np.ndarray or tf.Tensor: Continuous action vector for a single state or action batch for
+                batched states; tensor=True retains the tensor batch dimension.
+        """
         is_single_state = len(state.shape) == self.state_ndim
 
         if not tensor:
@@ -240,7 +365,25 @@ class TD3(DDPG):
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones, weights):
-        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """Apply actor and critic gradient updates, update target networks, and return
+        diagnostics.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+            weights (array_like or None): Per-transition importance-sampling weights, shaped (batch,) or
+                (batch, 1); public update methods replace None with unit weights.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor]: Actor loss, critic loss, and summed absolute twin-
+                critic TD errors per transition. Actor and target updates follow actor_update_freq.
         """
         print("[DEBUG] initializing {_train_body TD3}.")
         with tf.device(self.device):
@@ -270,14 +413,46 @@ class TD3(DDPG):
             return actor_loss, critic_loss, tf.abs(td_errors1) + tf.abs(td_errors2)
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
-        """Return temporal-difference errors for the supplied transition batch."""
+        """Return temporal-difference errors for the supplied transition batch.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+
+        Returns:
+            np.ndarray: Sum of absolute twin-critic TD errors per sample, with singleton dimensions
+                squeezed.
+        """
         td_errors1, td_errors2 = self._compute_td_error_body(
             states, actions, next_states, rewards, dones)
         return np.squeeze(np.abs(td_errors1.numpy()) + np.abs(td_errors2.numpy()))
 
     @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
-        """Compute batched temporal-difference errors using the target networks."""
+        """Compute batched temporal-difference errors using the target networks.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Signed target-minus-Q1 and target-minus-Q2 residuals using
+                target-policy smoothing.
+        """
         print("[DEBUG] initializing {_compute_td_error_body TD3}.")
         rewards = tf.reshape(rewards, (-1,))
         dones = tf.reshape(dones, (-1,))
@@ -303,7 +478,14 @@ class TD3(DDPG):
 
     @staticmethod
     def get_argument(parser=None):
-        """Add this component's command-line options and return the argument parser."""
+        """Add this component's command-line options and return the argument parser.
+
+        Args:
+            parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+        Returns:
+            argparse.ArgumentParser: Parser extended with the supported component options.
+        """
         parser = DDPG.get_argument(parser)
 
         parser.add_argument('--actor-update-freq', type=int, default=2,

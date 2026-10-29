@@ -15,7 +15,17 @@ class CriticQ(tf.keras.Model):
     """
 
     def __init__(self, state_shape, action_dim, critic_units=(256, 256), name='qf'):
-        """Build the hidden state-action layers and scalar Q-value head."""
+        """Build the hidden state-action layers and scalar Q-value head.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            critic_units (sequence[int]): Widths of the critic hidden layers.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         self.l1 = Dense(critic_units[0], name="L1", activation='relu')
@@ -27,7 +37,14 @@ class CriticQ(tf.keras.Model):
         self(dummy_state)
 
     def call(self, states):
-        """Return Q-value estimates for a batch of state-action pairs."""
+        """Return Q-value estimates for a batch of state-action pairs.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: All discrete-action Q-values shaped (batch, action_dim).
+        """
         features = self.l1(states)
         features = self.l2(features)
         values = self.l3(features)
@@ -46,7 +63,21 @@ class SACDiscrete(SAC):
             critic_fn=None,
             target_update_interval=None,
             **kwargs):
-        """Configure the agent's networks, optimizers, and training hyperparameters."""
+        """Configure the agent's networks, optimizers, and training hyperparameters.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            actor_fn (callable or None): Factory for the discrete SAC actor.
+            critic_fn (callable or None): Factory for the discrete SAC Q networks.
+            target_update_interval (int or None): Optional interval for discrete SAC target-network
+                updates.
+            *args (tuple): Positional arguments forwarded to SAC construction.
+            **kwargs (dict): Additional keyword arguments forwarded to SAC construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         kwargs["name"] = "SAC_discrete"
         self.actor_fn = actor_fn if actor_fn is not None else CategoricalActor
         self.critic_fn = critic_fn if critic_fn is not None else CriticQ
@@ -61,13 +92,35 @@ class SACDiscrete(SAC):
 
     def _setup_actor(self, state_shape, action_dim, actor_units, lr, max_action=1.):
         # The output of actor is categorical distribution
-        """Create the action policy and its optimizer."""
+        """Create the action policy and its optimizer.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            actor_units (sequence[int]): Widths of the actor hidden layers.
+            lr (float): Optimizer learning rate.
+            max_action (float): Symmetric continuous-action bound or output scale. This implementation
+                does not read this argument.
+
+        Returns:
+            None.
+        """
         self.actor = self.actor_fn(
             state_shape, action_dim, actor_units)
         self.actor_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
     def _setup_critic_q(self, state_shape, action_dim, critic_units, lr):
-        """Create Q-value networks, initialize their targets, and configure optimization."""
+        """Create Q-value networks, initialize their targets, and configure optimization.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            critic_units (sequence[int]): Widths of the critic hidden layers.
+            lr (float): Optimizer learning rate.
+
+        Returns:
+            None.
+        """
         self.qf1 = self.critic_fn(state_shape, action_dim, critic_units, name="qf1")
         self.qf2 = self.critic_fn(state_shape, action_dim, critic_units, name="qf2")
         self.qf1_target = self.critic_fn(state_shape, action_dim, critic_units, name="qf1_target")
@@ -80,14 +133,40 @@ class SACDiscrete(SAC):
         self.qf2_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
     def _setup_critic_v(self, *args, **kwargs):
-        """
-        Do not need state-value function because it can be directly computed from Q-function.
+        """Do not need state-value function because it can be directly computed from Q-function.
         See Eq.(10) in the paper.
+
+        Args:
+            *args (tuple): Compatibility arguments; this discrete SAC variant does not construct a
+                separate V network.
+            **kwargs (dict): Compatibility arguments; this discrete SAC variant does not construct a
+                separate V network.
+
+        Returns:
+            None.
         """
         pass
 
     def train(self, states, actions, next_states, rewards, dones, weights=None):
-        """Update the actor and critics from a replay minibatch and return training diagnostics."""
+        """Update the actor and critics from a replay minibatch and return training
+        diagnostics.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
+            weights (array_like or None): Per-transition importance-sampling weights, shaped (batch,) or
+                (batch, 1); public update methods replace None with unit weights.
+
+        Returns:
+            None.
+        """
         if weights is None:
             weights = np.ones_like(rewards)
 
@@ -105,7 +184,25 @@ class SACDiscrete(SAC):
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones, weights):
-        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """Apply actor and critic gradient updates, update target networks, and return
+        diagnostics.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
+            weights (array_like or None): Per-transition importance-sampling weights, shaped (batch,) or
+                (batch, 1); public update methods replace None with unit weights.
+
+        Returns:
+            tuple[tf.Tensor, ...]: Mean twin-critic loss, policy loss, mean policy entropy, and
+                minimum/maximum/mean action log probabilities after optimizer/target updates.
         """
         with tf.device(self.device):
             batch_size = states.shape[0]
@@ -191,7 +288,23 @@ class SACDiscrete(SAC):
                 tf.reduce_mean(current_action_logp))
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
-        """Return temporal-difference errors for the supplied transition batch."""
+        """Return temporal-difference errors for the supplied transition batch.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
+
+        Returns:
+            np.ndarray: Summed absolute twin-critic residuals for each sample, with singleton dimensions
+                squeezed.
+        """
         td_errors_q1, td_errors_q2 = self._compute_td_error_body(
             states, actions, next_states, rewards, dones)
         return np.squeeze(
@@ -200,7 +313,22 @@ class SACDiscrete(SAC):
 
     @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
-        """Compute batched temporal-difference errors using the target networks."""
+        """Compute batched temporal-difference errors using the target networks.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Signed per-sample residuals for Q1 and Q2.
+        """
         with tf.device(self.device):
             batch_size = states.shape[0]
             not_dones = 1. - tf.cast(dones, dtype=tf.float32)
@@ -232,7 +360,14 @@ class SACDiscrete(SAC):
 
     @staticmethod
     def get_argument(parser=None):
-        """Add this component's command-line options and return the argument parser."""
+        """Add this component's command-line options and return the argument parser.
+
+        Args:
+            parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+        Returns:
+            argparse.ArgumentParser: Parser extended with the supported component options.
+        """
         parser = SAC.get_argument(parser)
         parser.add_argument('--target-update-interval', type=int, default=None)
         return parser

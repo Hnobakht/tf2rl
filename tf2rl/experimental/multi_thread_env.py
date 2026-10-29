@@ -13,17 +13,16 @@ class MultiThreadEnv(object):
     """
 
     def __init__(self, env_fn, batch_size, thread_pool=4, max_episode_steps=1000):
-        """
+        """Initialize MultiThreadEnv and its configuration.
 
         Args:
-            env_fn: function
-                Function to make an environment
-            batch_size: int
-                Batch size
-            thread_pool: int
-                Thread pool size
-            max_episode_steps: int
-                Maximum step of an episode
+            env_fn (callable): Zero-argument factory creating a new environment instance.
+            batch_size (int): Number of transitions in each learning or sampling minibatch.
+            thread_pool (int): Number of Python worker threads used to step the environment batch.
+            max_episode_steps (int or None): Maximum number of physical steps per episode.
+
+        Returns:
+            None: Initializes the instance.
         """
         assert batch_size % thread_pool == 0
 
@@ -54,26 +53,27 @@ class MultiThreadEnv(object):
 
     @property
     def original_env(self):
-        """Return the sample environment used to expose spaces and metadata."""
+        """Return the sample environment used to expose spaces and metadata.
+
+        Returns:
+            gym.Env: Extra sample environment used to expose observation/action spaces and task
+                metadata.
+        """
         return self._sample_env
 
     def step(self, actions, name=None):
-        """
+        """Execute the threaded Python environment step through TensorFlow py_function.
 
         Args:
-            actions: tf.Tensor
-                Actions whose shape is float32[batch_size, dim_action]
-            name: str
-                Operator name
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            name (str or None): Name assigned to the model, operation, or registered component. This
+                implementation does not read this argument.
 
         Returns:
-            obs: tf.Tensor
-                [batch_size, dim_obs]
-            reward: tf.Tensor
-                [batch_size]
-            done: tf.Tensor
-                [batch_size]
-            env_info: None
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor, None]: Physical next observations (batch_size,
+                *observation_shape), rewards (batch_size,), float32 true-termination flags
+                (batch_size,), and no info object. Completed worlds reset internally for the next call.
         """
         assert isinstance(actions, tf.Tensor)
         # with tf.variable_scope(name, default_name="MultiStep"):
@@ -89,20 +89,27 @@ class MultiThreadEnv(object):
         return obs, reward, done, None
 
     def py_step(self, actions):
-        """
+        """Step environment shards on Python threads, collect physical outcomes, and reset
+        finished worlds.
 
         Args:
-            actions: np.array
-                Actions whose shape is [batch_size, dim_action]
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
 
         Returns:
-            obs: np.array
-            reward: np.array
-            done: np.array
+            tuple[np.ndarray, np.ndarray, np.ndarray]: Physical next observations, float32 rewards, and
+                float32 true-termination flags. Internal observation state is reset for finished worlds
+                after constructing these arrays.
         """
         def _process(offset):
             """Step this thread's environments and record observations, rewards, and episode
             boundaries.
+
+            Args:
+                offset (int): Index of the environment assigned to the worker callback.
+
+            Returns:
+                None.
             """
             for idx_env in range(offset, offset+self.batch_thread):
                 new_obs, reward, terminated, truncated, _ = self.envs[idx_env].step(
@@ -136,12 +143,21 @@ class MultiThreadEnv(object):
         return obs, reward, done
 
     def py_observation(self):
-        """Return the latest observations from all environments as a float32 batch."""
+        """Return the latest observations from all environments as a float32 batch.
+
+        Returns:
+            np.ndarray: Latest internal observations shaped (batch_size, *observation_shape), including
+                reset observations for completed worlds.
+        """
         obs = np.stack(self.list_obs, axis=0).astype(np.float32)
         return obs
 
     def py_reset(self):
-        """Reset all environments and return the stacked initial observations."""
+        """Reset all environments and return the stacked initial observations.
+
+        Returns:
+            np.ndarray: Float32 initial observations shaped (batch_size, *observation_shape).
+        """
         for idx_env, env in enumerate(self.envs):
             obs, _ = env.reset()
             # TODO: Allow flexible data type
@@ -151,15 +167,27 @@ class MultiThreadEnv(object):
 
     @property
     def max_action(self):
-        """Return the first action coordinate's upper bound as a scalar."""
+        """Return the first action coordinate's upper bound as a scalar.
+
+        Returns:
+            float: Upper bound of the first continuous action coordinate.
+        """
         return float(self._sample_env.action_space.high[0])
 
     @property
     def min_action(self):
-        """Return the first action coordinate's lower bound as a scalar."""
+        """Return the first action coordinate's lower bound as a scalar.
+
+        Returns:
+            float: Lower bound of the first continuous action coordinate.
+        """
         return float(self._sample_env.action_space.low[0])
 
     @property
     def state_dim(self):
-        """Return the observation-vector dimension of the sample environment."""
+        """Return the observation-vector dimension of the sample environment.
+
+        Returns:
+            int: Width of the sample environment observation vector.
+        """
         return self._sample_env.observation_space.shape[0]

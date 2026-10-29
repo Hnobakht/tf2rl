@@ -40,7 +40,20 @@ class EmpiricalNormalizer:
     def __init__(
         self, shape, batch_axis=0, eps=1e-2, dtype=np.float32, until=None, clip_threshold=None
     ):
-        """Initialize observation statistics, update limits, and optional clipping."""
+        """Initialize observation statistics, update limits, and optional clipping.
+
+        Args:
+            shape (tuple[int, ...]): Shape of one normalized sample, excluding the batch axis.
+            batch_axis (int): Axis indexing independent samples when updating normalization statistics.
+            eps (float): Positive stabilizer added to the running variance before taking its square
+                root.
+            dtype (numpy.dtype or type): Requested array element type.
+            until (int or None): Stop learning normalization statistics after this sample count.
+            clip_threshold (float or None): Optional symmetric bound applied to normalized observations.
+
+        Returns:
+            None: Initializes the instance.
+        """
         dtype = np.dtype(dtype)
         self.batch_axis = batch_axis
         self.eps = dtype.type(eps)
@@ -55,24 +68,45 @@ class EmpiricalNormalizer:
 
     @property
     def mean(self):
-        """Return a copy of the running observation mean without the batch axis."""
+        """Return a copy of the running observation mean without the batch axis.
+
+        Returns:
+            np.ndarray: Copy of the running mean, shaped like one observation without the batch axis.
+        """
         return np.squeeze(self._mean, self.batch_axis).copy()
 
     @property
     def std(self):
-        """Return the running observation standard deviation without the batch axis."""
+        """Return the running observation standard deviation without the batch axis.
+
+        Returns:
+            np.ndarray: Running standard deviation shaped like one observation, without adding eps.
+        """
         return np.sqrt(np.squeeze(self._var, self.batch_axis))
 
     @property
     def _std_inverse(self):
-        """Return the cached inverse standard deviation with numerical stabilization."""
+        """Return the cached inverse standard deviation with numerical stabilization.
+
+        Returns:
+            np.ndarray: Cached (variance+eps)**(-0.5), retaining the singleton batch axis for
+                broadcasting.
+        """
         if self._cached_std_inverse is None:
             self._cached_std_inverse = (self._var + self.eps) ** -0.5
 
         return self._cached_std_inverse
 
     def experience(self, x):
-        """Learn input values without computing the output values of them"""
+        """Learn input values without computing the output values of them
+
+        Args:
+            x (array_like): Input samples; leading dimensions index samples and the remaining dimensions
+                contain features.
+
+        Returns:
+            None.
+        """
 
         if self.until is not None and self.count >= self.until:
             return
@@ -95,11 +129,19 @@ class EmpiricalNormalizer:
 
     def __call__(self, x, update=True):
         """Normalize mean and variance of values based on emprical values.
+
+        Normalization coefficients are read before any requested update. Call experience first
+        to initialize statistics; this method returns early when count is zero.
+
         Args:
-            x (ndarray or Variable): Input values
-            update (bool): Flag to learn the input values
+            x (array_like): Input samples; leading dimensions index samples and the remaining dimensions
+                contain features.
+            update (bool): Update statistics after reading the current normalization coefficients;
+                ignored while count is zero.
+
         Returns:
-            ndarray or Variable: Normalized output values
+            np.ndarray: Normalized and optionally clipped samples with the same shape as x; the input is
+                returned unchanged when no samples have been observed.
         """
         if self.count == 0:
             return x
@@ -116,7 +158,15 @@ class EmpiricalNormalizer:
         return normalized
 
     def inverse(self, y):
-        """Undo observation normalization using the current mean and variance."""
+        """Undo observation normalization using the current mean and variance.
+
+        Args:
+            y (array_like): Normalized samples to transform back into the original observation scale.
+
+        Returns:
+            np.ndarray: Samples in the original scale, with the same shape as y. Clipped information
+                cannot be recovered.
+        """
         mean = np.broadcast_to(self._mean, y.shape)
         std = np.broadcast_to(np.sqrt(self._var + self.eps), y.shape)
         return y * std + mean
@@ -133,7 +183,14 @@ class Normalizer:
     """
 
     def __init__(self, mean_only=False):
-        """Initialize TensorFlow running statistics and the mean-only update mode."""
+        """Initialize TensorFlow running statistics and the mean-only update mode.
+
+        Args:
+            mean_only (bool): Track the mean without updating the variance.
+
+        Returns:
+            None: Initializes the instance.
+        """
         self._mean_only = mean_only
         self._n = tf.Variable(0, dtype=tf.float32)
         self._mean = tf.Variable(0, dtype=tf.float32)
@@ -145,8 +202,11 @@ class Normalizer:
         """Compute next mean and std
 
         Args:
-            x: float
-                Input data.
+            x (array_like): One scalar/vector observation; observe counts this entire value as one
+                sample.
+
+        Returns:
+            None.
         """
         self._n.assign_add(1)
         numerator = x - self._mean
@@ -156,7 +216,18 @@ class Normalizer:
             self._var = tf.clip_by_value(tf.math.divide_no_nan(self._mean_diff, self._n), 1e-2, 1e2)
 
     def normalize(self, x):
-        """Standardize inputs using TensorFlow running statistics with safe division."""
+        """Standardize inputs using TensorFlow running statistics with safe division.
+
+        This historical implementation requires the variance field, which is not allocated when
+        mean_only=True.
+
+        Args:
+            x (array_like): One scalar/vector observation; observe counts this entire value as one
+                sample.
+
+        Returns:
+            tf.Tensor: Standardized values with safe division by the tracked standard deviation.
+        """
         std = tf.math.sqrt(self._var)
         return tf.math.divide_no_nan(x - self._mean, std)
 
@@ -165,14 +236,26 @@ class NormalizerNumpy:
     """Track online NumPy mean and variance for observation normalization."""
 
     def __init__(self):
-        """Initialize the running sample count, mean, and variance."""
+        """Initialize the running sample count, mean, and variance.
+
+        Returns:
+            None: Initializes the instance.
+        """
         self._n = 0
         self._mean = 0
         self._mean_diff = 0
         self._var = 0
 
     def observe(self, x):
-        """Update the running sample count, mean, and variance with one observation."""
+        """Update the running sample count, mean, and variance with one observation.
+
+        Args:
+            x (array_like): One scalar/vector observation; observe counts this entire value as one
+                sample.
+
+        Returns:
+            None.
+        """
         self._n += 1
         numerator = x - self._mean
         self._mean += (x - self._mean) / self._n
@@ -180,17 +263,43 @@ class NormalizerNumpy:
         self._var = self._mean_diff / self._n
 
     def normalize(self, x, update=False):
-        """Standardize observations with running statistics, optionally updating them first."""
+        """Standardize observations with running statistics, optionally updating them first.
+
+        Args:
+            x (array_like): One scalar/vector observation; observe counts this entire value as one
+                sample.
+            update (bool): Update running statistics from the supplied observations before normalizing.
+
+        Returns:
+            np.ndarray or numpy scalar: Standardized input using the running mean and stabilized
+                standard deviation.
+        """
         if update:
             self.observe(x)
         return (x - self._mean) / (np.sqrt(self._var) + 1e-8)
 
     def get_params(self):
-        """Return the running count, mean, accumulated squared deviations, and variance."""
+        """Return the running count, mean, accumulated squared deviations, and variance.
+
+        Returns:
+            tuple: Running (count, mean, accumulated_squared_deviations, variance) suitable for
+                set_params.
+        """
         return self._n, self._mean, self._mean_diff, self._var
 
     def set_params(self, n, mean, mean_diff, var):
-        """Restore the running normalization statistics from saved values."""
+        """Restore the running normalization statistics from saved values.
+
+        Args:
+            n (int): Number of observations represented by the restored running statistics.
+            mean (array_like): Mean values or running means aligned with the input coordinates.
+            mean_diff (array_like): Accumulated sum of squared deviations used by the online variance
+                estimator.
+            var (array_like): Variance values to restore.
+
+        Returns:
+            None.
+        """
         self._n = n
         self._mean = mean
         self._mean_diff = mean_diff

@@ -31,7 +31,33 @@ class IRLOnPolicyTrainer(Trainer):
             is_short_memory = False,
             discriminator_noise=0,
             **kwargs):
-        """Configure training, replay storage, evaluation, and checkpoint handling."""
+        """Configure training, replay storage, evaluation, and checkpoint handling.
+
+        Args:
+            policy (Policy): Agent supplying action selection and learning operations.
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            args (argparse.Namespace): Parsed experiment options used to configure this operation.
+            irl (RewardLearner or None): Learned reward/discriminator component; its requirements
+                determine whether action densities are needed.
+            expert_obs (array_like): Expert observations shaped (expert_transitions,
+                *observation_shape).
+            expert_next_obs (array_like): Expert successor observations aligned with expert_obs.
+            expert_act (array_like): Expert actions aligned with expert_obs.
+            test_env (gym.Env or None): Independent evaluation environment; must differ from the
+                training instance.
+            is_perb_rew (bool): Historical perturbed-reward option; unsupported by the active imitation
+                trainer.
+            is_episodic (bool): Historical trainer flag enabling DAC absorbing-state collection.
+            is_short_memory (bool): Historical short-memory option; unsupported by the active imitation
+                trainer. This implementation does not read this argument.
+            discriminator_noise (float): Fraction of expert minibatch entries substituted with agent
+                replay samples.
+            **kwargs (dict): Additional keyword arguments forwarded to Trainer construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         self._irl = irl
         args.dir_suffix = self._irl.policy_name + args.dir_suffix
         super().__init__(policy, env, args, test_env, is_episodic=is_episodic, **kwargs)
@@ -46,14 +72,22 @@ class IRLOnPolicyTrainer(Trainer):
         self._irl_chechpoint()
 
     def _irl_chechpoint(self):
-        """Create the checkpoint and manager for the imitation-learning model."""
+        """Create the checkpoint and manager for the imitation-learning model.
+
+        Returns:
+            None.
+        """
         self._checkpoint_irl = tf.train.Checkpoint(policy=self._irl)
         self.checkpoint_manager_irl = tf.train.CheckpointManager(
             self._checkpoint_irl, directory=self._output_dir + "/irl", max_to_keep=10)
 
     def __call__(self):
         # Prepare buffer
-        """Run the training loop, including data collection, policy updates, and evaluation."""
+        """Run the training loop, including data collection, policy updates, and evaluation.
+
+        Returns:
+            None.
+        """
         self.replay_buffer = get_replay_buffer(
             self._policy, self._env, self._irl)
         kwargs_local_buf = get_default_rb_dict(
@@ -209,7 +243,15 @@ class IRLOnPolicyTrainer(Trainer):
         tf.summary.flush()
 
     def finish_horizon(self, last_val=0):
-        """Finish the rollout by computing return targets and policy advantages."""
+        """Finish the rollout by computing return targets and policy advantages.
+
+        Args:
+            last_val (float or array_like): Value bootstrap appended at the end of the current rollout
+                segment.
+
+        Returns:
+            None.
+        """
         self.local_buffer.on_episode_end()
         samples = self.local_buffer._encode_sample(
             np.arange(self.local_buffer.get_stored_size()))
@@ -236,7 +278,16 @@ class IRLOnPolicyTrainer(Trainer):
         self.local_buffer.clear()
 
     def evaluate_policy(self, total_steps):
-        """Evaluate the policy in the test environment and return its performance."""
+        """Evaluate the policy in the test environment and return its performance.
+
+        Args:
+            total_steps (int): Physical environment-step count used to label evaluation summaries and
+                trajectory files.
+
+        Returns:
+            tuple[float, float]: Mean evaluation episode return and length; configured summaries and
+                saved trajectories are also produced.
+        """
         avg_test_return = 0.
         avg_test_steps = 0
         if self._save_test_path:

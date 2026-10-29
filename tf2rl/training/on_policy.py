@@ -18,6 +18,24 @@ class OnPolicyTrainer:
     """Train PPO/VPG using the same collector for Gymnasium and MJWarp."""
 
     def __init__(self, policy, env, rollout_steps, seed=None):
+        """Initialize OnPolicyTrainer and its configuration.
+
+        Args:
+            policy (OnPolicyAgent): Tensor-capable agent whose horizon equals num_envs * rollout_steps.
+            env (gym.vector.VectorEnv): Tensor-backed environment whose num_envs determines the complete
+                rollout batch size.
+            rollout_steps (int): Number of sequential steps collected per environment in one rollout.
+            seed (int or None): Random seed; None leaves initialization to the underlying random
+                generator.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            TypeError: Vector on-policy collection requires an OnPolicyAgent.
+            ValueError: Policy horizon must equal num_envs * rollout_steps and be divisible by
+                batch_size.
+        """
         if not isinstance(policy, OnPolicyAgent):
             raise TypeError("Vector on-policy collection requires an OnPolicyAgent")
         self.policy = policy
@@ -31,19 +49,61 @@ class OnPolicyTrainer:
         self.collector = RolloutCollector(policy, env, rollout_steps, seed)
 
     def collect(self):
+        """Collect a fixed-length vector rollout through the stateful rollout collector.
+
+        Returns:
+            tuple[tuple[tf.Tensor, ...], dict]: Eight time-major tensors (states, actions, logps,
+                values, rewards, terminated, truncated, final_obs) and collection statistics. Each
+                tensor starts with (rollout_steps, environments).
+        """
         return self.collector.collect()
 
     def __call__(self, args):
+        """Execute the configured on-policy training loop.
+
+        Args:
+            args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+        Returns:
+            dict: Completed on-policy run summary returned by run(args).
+        """
         return self.run(args)
 
     def update(self, *rollout):
-        """Place the rollout on the learner device before preprocessing and updates."""
+        """Place the rollout on the learner device before preprocessing and updates.
+
+        Args:
+            *rollout (tuple[tf.Tensor, ...]): Eight rollout fields in collector order: states, actions,
+                logps, values, rewards, terminated, truncated, final_obs.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Mean [actor_loss, critic_loss, estimated_kl] diagnostics and
+                integer minibatch-update count.
+        """
         with tf.device(self.policy.device):
             rollout = tuple(tf.identity(value) for value in rollout)
             return self._update(*rollout)
 
     @tf.function(reduce_retracing=True)
     def _update(self, states, actions, logps, values, rewards, terminated, truncated, final_obs):
+        """Build boundary-aware rollout targets, shuffle minibatches, and optimize until epochs
+        finish or KL stops the update.
+
+        Args:
+            states (tf.Tensor): Current observation tensor shaped (time, environments, *state_shape).
+            actions (tf.Tensor): Collected actions shaped (time, environments, *action_shape).
+            logps (tf.Tensor): Collection-time action log probabilities shaped (time, environments).
+            values (tf.Tensor): Collection-time state values shaped (time, environments).
+            rewards (tf.Tensor): Environment rewards shaped (time, environments).
+            terminated (tf.Tensor): True termination flags shaped (time, environments).
+            truncated (tf.Tensor): Time-limit flags shaped (time, environments).
+            final_obs (tf.Tensor): Physical successor observations shaped (time, environments,
+                *state_shape), before autoreset.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Mean diagnostics of shape (3,) and scalar minibatch count after
+                optimization, including any KL-based early stop.
+        """
         policy = self.policy
         state_shape = self.env.single_observation_space.shape
         action_shape = self.env.single_action_space.shape
@@ -94,7 +154,19 @@ class OnPolicyTrainer:
         return diagnostics / tf.cast(updates, tf.float32), updates
 
     def run(self, args):
-        """Collect rollouts, update minibatches, and record each measured iteration."""
+        """Collect rollouts, update minibatches, and record each measured iteration.
+
+        Use validated options from on_policy_parser. The run writes metrics.json, TensorBoard
+        events, managed checkpoints, and a final checkpoint, and closes its local summary
+        writer.
+
+        Args:
+            args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+        Returns:
+            dict: Run summary with rollout/update counters, timing, checkpoint path, configuration, and
+                optional evaluation statistics.
+        """
         policy, trainer = self.policy, self
         count = self.count
         env = self.env
@@ -212,6 +284,16 @@ class OnPolicyTrainer:
             writer.close()
 
     def evaluate(self, args):
+        """Evaluate the trained policy in a fresh scalar environment when evaluation episodes
+        are requested.
+
+        Args:
+            args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+        Returns:
+            dict or None: Per-episode returns and mean_return; None when evaluation is disabled with
+                zero episodes.
+        """
         kwargs = dict(args.env_kwargs)
         if args.max_episode_steps is not None:
             kwargs["max_episode_steps"] = args.max_episode_steps
@@ -220,7 +302,20 @@ class OnPolicyTrainer:
         )
 
     def save(self, iteration):
+        """Save policy weights using the rollout iteration as the checkpoint number.
+
+        Args:
+            iteration (int): Iteration counter used for checkpoint numbering or reporting.
+
+        Returns:
+            str: TensorFlow checkpoint prefix saved with the supplied iteration number.
+        """
         return self.checkpoint_manager.save(checkpoint_number=iteration)
 
     def close(self):
+        """Close the vector environment owned by the trainer.
+
+        Returns:
+            None.
+        """
         self.env.close()

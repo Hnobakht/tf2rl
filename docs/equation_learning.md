@@ -29,7 +29,7 @@ arguments, checkpoints, TensorBoard events and equations are retained under
 To train only the staged variant:
 
 ```bash
-.venv-modern/bin/python -m tf2rl.experiments.cli \
+.venv-modern/bin/python -m tf2rl.experiments.train --runner imitation \
   --algorithm eqn-gail --env-name Pendulum-v1 \
   --expert-path-dir "$EXPERT_DIR" --seed 13 \
   --max-steps 20000 --n-warmup 1000 --units 64,64 \

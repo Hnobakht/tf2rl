@@ -6,16 +6,12 @@ def discount_cumsum(x, discount):
     """Forked from rllab for computing discounted cumulative sums of vectors.
 
     Args:
-        x: np.ndarray or tf.Tensor
-            Vector of inputs
-        discount: float
-            Discount factor
+        x (np.ndarray): One-dimensional, time-ordered vector of values to accumulate.
+        discount (float): Reward discount factor gamma.
 
     Returns:
-        Discounted cumulative summation. If input is [x0, x1, x2], then the output is:
-            [x0 + discount * x1 + discount^2 * x2,
-            x1 + discount * x2,
-            x2]
+        np.ndarray: Discounted suffix sums with the same shape as x: output[t] = sum(discount**k *
+            x[t+k]).
     """
     assert isinstance(x, np.ndarray) and x.ndim == 1
     return lfilter(b=[1], a=[1, float(-discount)], x=x[::-1], axis=0)[::-1]
@@ -43,6 +39,23 @@ def rollout_targets(
 
     Value regression uses bootstrapped discounted rewards-to-go, not ``A+V``;
     these differ for lambda < 1. Disabling GAE selects one-step TD advantages.
+
+    Args:
+        rewards (tf.Tensor): Per-step rewards shaped (time, environments).
+        values (tf.Tensor): Current state values shaped (time, environments).
+        next_values (tf.Tensor): Values of physical successor states, shaped (time, environments).
+        terminated (tf.Tensor): True termination flags shaped (time, environments); these suppress
+            bootstrapping.
+        truncated (tf.Tensor): Time-limit flags shaped (time, environments); these stop recursion
+            but retain value bootstrapping.
+        discount (float): Reward discount factor gamma.
+        lam (float): GAE trace-decay factor lambda.
+        enable_gae (bool): Use generalized advantage estimation; false selects one-step TD
+            advantages.
+
+    Returns:
+        tuple[tf.Tensor, tf.Tensor]: Advantages and bootstrapped discounted rewards-to-go, both
+            shaped (time, environments). Returns use reward recursion rather than advantages+values.
     """
     bootstrap = (1.0 - tf.cast(terminated, tf.float32)) * next_values
     boundary = tf.logical_or(terminated, truncated)

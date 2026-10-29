@@ -72,7 +72,7 @@ The environment backend and learner device are independent. Vector on-policy
 rollouts stay as tensors; cpprb replay remains on the host. Heavy optional image
 and simulator dependencies are imported only when those paths are used.
 
-## Extending and compatibility
+## Extending the framework
 
 Add an algorithm file and a factory or registration in `experiments/build.py`.
 Add a YAML experiment preset when CLI access is useful. Construct custom components
@@ -80,13 +80,14 @@ directly from Python when a preset would add no value. See [adding algorithms](a
 Shared models belong in `networks/`; private models can remain next to their algorithm.
 There is no callback system for learning updates or dependency-injection framework.
 
-Old import locations contain forwarding modules; implementations live in the
-packages above. Existing console commands and example filenames remain available.
-Hyphenated Hydra preset names remain aliases for underscore names. The old
-`conf/runner` templates remain available for existing external custom presets. Legacy CLI
-argument-builder methods remain for existing Python callers. Configuration is
-resolved and validated in `experiments/config.py`; no large configuration class
-hierarchy is introduced.
+The package uses the module paths above. Obsolete forwarding modules, old example
+launchers, the duplicate scalar on-policy trainer, and the unused dm_control viewer
+have been removed. The four examples are `train_sac.py`, `train_ppo.py`,
+`train_imitation.py`, and `custom_algorithm.py`. Existing console commands invoke
+the canonical assembly directly. Hydra presets use underscore names and live in
+`conf/experiment/`; each preset contains its complete settings. Custom presets
+should extend those experiment presets rather than the removed `conf/runner` group.
+Configuration is resolved and validated in `experiments/config.py`.
 
 Moving models does not change their TensorFlow checkpoint root keys or attribute
 paths. Restoring model/optimizer state still does not restore replay, an active

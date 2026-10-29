@@ -15,9 +15,10 @@ arguments and defaults. Training loops live in `tf2rl/training/`.
   --algorithm eqn-gail --env-name Pendulum-v1 --expert-path-dir PATH_TO_EXPERT
 ```
 
-`eqn-train`, `offpolicy-train`, `onpolicy-train`, `ppo-train`, and the original
-example filenames remain supported. Run each experiment in a fresh process when
-changing TensorFlow device or thread settings.
+`eqn-train`, `offpolicy-train`, `onpolicy-train`, and `ppo-train` invoke the shared
+assembly directly. Examples are `train_sac.py`, `train_ppo.py`, `train_imitation.py`,
+and `custom_algorithm.py`. Run each experiment in a fresh process when changing
+TensorFlow device or thread settings.
 
 ## Hydra and sweeps
 
@@ -32,8 +33,9 @@ tf2rl-train experiment=eqn_gail args.env_name=Pendulum-v1 args.expert_path_dir=P
 ```
 
 Presets: `sac`, `td3`, `ddpg`, `ppo`, `vpg`, `expert_sac`, `airl`, `gail`,
-`eqn_airl`, `eqn_gail`. Hyphenated `expert-sac`, `eqn-airl`, and `eqn-gail` remain
-aliases. The algorithm values retain their existing hyphenated spellings.
+`eqn_airl`, `eqn_gail`. Algorithm values such as `--algorithm eqn-gail` retain
+their hyphenated spellings. Old preset aliases and `conf/runner` templates have
+been removed; custom configurations can extend an experiment preset.
 
 `expert_sac` preserves the original scalar expert recipe (128-wide default
 networks); `sac` selects the vector recipe (64-wide default networks). YAML

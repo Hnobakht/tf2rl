@@ -5,7 +5,16 @@ import tensorflow as tf
 class VAE(tf.keras.Model):
     """Variational autoencoder using supplied inference and generative networks."""
     def __init__(self, latent_dim, inference_net, generative_net):
-        """Attach the inference and generative networks and set the latent dimension."""
+        """Attach the inference and generative networks and set the latent dimension.
+
+        Args:
+            latent_dim (int): Number of latent coordinates used by the variational autoencoder.
+            inference_net (keras.Model): Encoder producing latent means and log variances.
+            generative_net (keras.Model): Decoder mapping latent samples to reconstruction logits.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super(VAE, self).__init__()
         self.latent_dim = latent_dim
         self.optimizer = tf.keras.optimizers.Adam(1e-4)
@@ -14,26 +23,61 @@ class VAE(tf.keras.Model):
 
     @tf.function
     def sample(self, eps=None):
-        """
-        Decode supplied latent vectors or 100 standard-normal samples into generated observations.
+        """Decode supplied latent vectors or 100 standard-normal samples into generated
+        observations.
+
+        Args:
+            eps (tf.Tensor or None): Latent inputs shaped (batch, latent_dim); None draws 100 standard-
+                normal samples.
+
+        Returns:
+            tf.Tensor: Decoder probabilities generated from the supplied latent noise, or 100 standard-
+                normal latent samples by default.
         """
         if eps is None:
             eps = tf.random.normal(shape=(100, self.latent_dim))
         return self.decode(eps, apply_sigmoid=True)
 
     def encode(self, x):
-        """Return the latent Gaussian mean and log variance for the input batch."""
+        """Return the latent Gaussian mean and log variance for the input batch.
+
+        Args:
+            x (array_like): Input samples; leading dimensions index samples and the remaining dimensions
+                contain features.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Batched latent means and log variances, each with final
+                dimension latent_dim.
+        """
         mean, logvar = tf.split(self.inference_net(x), num_or_size_splits=2, axis=1)
         return mean, logvar
 
     def reparameterize(self, mean, logvar):
-        """Sample latent vectors from Gaussian parameters using differentiable reparameterization.
+        """Sample latent vectors from Gaussian parameters using differentiable
+        reparameterization.
+
+        Args:
+            mean (tf.Tensor): Latent Gaussian means aligned with logvar and the sampled latent
+                coordinates.
+            logvar (tf.Tensor): Latent log variances aligned with the latent means.
+
+        Returns:
+            tf.Tensor: Differentiable Gaussian latent samples with the same shape as mean.
         """
         eps = tf.random.normal(shape=mean.shape)
         return eps * tf.exp(logvar * .5) + mean
 
     def decode(self, z, apply_sigmoid=False):
-        """Map latent vectors to decoder logits, optionally applying a sigmoid."""
+        """Map latent vectors to decoder logits, optionally applying a sigmoid.
+
+        Args:
+            z (tf.Tensor): Latent samples shaped (batch, latent_dim).
+            apply_sigmoid (bool): Convert decoder logits to probabilities.
+
+        Returns:
+            tf.Tensor: Decoder logits, or probabilities when apply_sigmoid is True, retaining the batch
+                axis.
+        """
         logits = self.generative_net(z)
         if apply_sigmoid:
             probs = tf.sigmoid(logits)
@@ -43,7 +87,16 @@ class VAE(tf.keras.Model):
 
     @tf.function
     def compute_loss(self, x):
-        """Return the Monte Carlo negative evidence lower bound for the input batch."""
+        """Return the Monte Carlo negative evidence lower bound for the input batch.
+
+        Args:
+            x (array_like): Input samples; leading dimensions index samples and the remaining dimensions
+                contain features.
+
+        Returns:
+            tf.Tensor: Scalar negative evidence lower bound, combining reconstruction, prior, and
+                posterior log-density terms.
+        """
         mean, logvar = self.encode(x)
         z = self.reparameterize(mean, logvar)
         x_logit = self.decode(z)
@@ -56,7 +109,15 @@ class VAE(tf.keras.Model):
 
     @tf.function
     def compute_apply_gradients(self, x):
-        """Compute the variational loss and apply one optimizer update."""
+        """Compute the variational loss and apply one optimizer update.
+
+        Args:
+            x (array_like): Input samples; leading dimensions index samples and the remaining dimensions
+                contain features.
+
+        Returns:
+            None.
+        """
         with tf.GradientTape() as tape:
             loss = self.compute_loss(x)
         gradients = tape.gradient(loss, self.trainable_variables)
@@ -64,7 +125,19 @@ class VAE(tf.keras.Model):
 
 
 def log_normal_pdf(sample, mean, logvar, raxis=1):
-    """Return diagonal Gaussian log densities summed along the requested axis."""
+    """Return diagonal Gaussian log densities summed along the requested axis.
+
+    Args:
+        sample (tf.Tensor): Samples at which to evaluate the diagonal Gaussian log density.
+        mean (tf.Tensor): Latent Gaussian means aligned with logvar and the sampled latent
+            coordinates.
+        logvar (tf.Tensor): Latent log variances aligned with the latent means.
+        raxis (int): Axis over which independent log-density terms are summed.
+
+    Returns:
+        tf.Tensor: Diagonal-Gaussian log density summed over raxis; that axis is removed from the
+            result.
+    """
     log2pi = tf.math.log(2. * np.pi)
     return tf.reduce_sum(
         -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),
@@ -142,7 +215,16 @@ if __name__ == "__main__":
 
 
     def generate_and_save_images(model, epoch, test_input):
-        """Decode test latent vectors and save the image grid for this epoch."""
+        """Decode test latent vectors and save the image grid for this epoch.
+
+        Args:
+            model (VAE): Decoder model exposing sample(test_input) for reconstruction image generation.
+            epoch (int): Training epoch used in the generated image filename.
+            test_input (array_like): Latent test samples passed to the image-generating model.
+
+        Returns:
+            None.
+        """
         predictions = model.sample(test_input)
         plt.close()
         plt.figure(figsize=(4, 4))
@@ -177,7 +259,15 @@ if __name__ == "__main__":
 
 
     def display_image(epoch_no):
-        """Open the generated image saved for the requested epoch."""
+        """Open the generated image saved for the requested epoch.
+
+        Args:
+            epoch_no (int): Epoch number identifying the saved reconstruction image.
+
+        Returns:
+            PIL.Image.Image: Image opened from the epoch-specific reconstruction PNG; the caller owns
+                the image resource.
+        """
         return PIL.Image.open('image_at_epoch_{:04d}.png'.format(epoch_no))
 
 

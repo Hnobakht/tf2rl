@@ -16,7 +16,19 @@ from tf2rl.networks.equation_export import evaluate_equation, expression_statist
 
 
 def inspect_equation(path):
-    """Restore a Pendulum run and report equation-export accuracy and sparsity diagnostics."""
+    """Restore a Pendulum run and report equation-export accuracy and sparsity diagnostics.
+
+    Args:
+        path (str or Path): Input or output filesystem path used by this operation.
+
+    Returns:
+        dict: Restored checkpoint, sample count, maximum reward-export error, expression size,
+            recorded sparsity phases, and current sparsity statistics.
+
+    Raises:
+        ValueError: This diagnostic samples Pendulum observations and actions. Requires an EQN
+            algorithm. No discriminator checkpoint.
+    """
     args = json.loads((path / 'args.txt').read_text())
     if args['env_name'] != 'Pendulum-v1':
         raise ValueError('This diagnostic samples Pendulum observations and actions')
@@ -87,7 +99,11 @@ def inspect_equation(path):
 
 
 def main():
-    """Inspect a saved Pendulum equation model and print its export diagnostics."""
+    """Inspect a saved Pendulum equation model and print its export diagnostics.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('run', type=Path)
     args = parser.parse_args()

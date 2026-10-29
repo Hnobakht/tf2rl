@@ -21,12 +21,28 @@ from tf2rl.networks.equation_export import evaluate_equation, extract_equation, 
 
 
 def arrays(model):
-    """Copy the model's trainable parameters into NumPy arrays."""
+    """Copy the model's trainable parameters into NumPy arrays.
+
+    Args:
+        model (keras.Model): Model whose parameters, regularization losses, or predictions are
+            accessed by this operation.
+
+    Returns:
+        list[np.ndarray]: Independent host copies of the model trainable variables, in model order.
+    """
     return [value.numpy().copy() for value in model.trainable_variables]
 
 
 def masked_zeros(model):
-    """Assert that masked parameters remain zero and return their count."""
+    """Assert that masked parameters remain zero and return their count.
+
+    Args:
+        model (EquationNetwork): Built sparse equation network exposing parameter layers and
+            persistent weight/bias masks.
+
+    Returns:
+        int: Number of pruned entries whose underlying weights were verified to remain exactly zero.
+    """
     pruned = 0
     for layer in model.parameter_layers:
         for weight, mask in ((layer.w, layer.w_mask), (layer.b, layer.b_mask)):
@@ -38,7 +54,20 @@ def masked_zeros(model):
 
 
 def export_error(model, inputs, kind, path):
-    """Export the model and report the maximum NumPy inference error and graph size."""
+    """Export the model and report the maximum NumPy inference error and graph size.
+
+    Args:
+        model (EquationNetwork): Built AIRL or GAIL equation model to export and compare against its
+            NumPy evaluator.
+        inputs (tf.Tensor): Batched input features; the final axis contains the model input
+            coordinates.
+        kind (str): Reward interpretation used by the equation export audit.
+        path (str or Path): Input or output filesystem path used by this operation.
+
+    Returns:
+        dict: Maximum output discrepancy and reachable graph-node count after checking JSON,
+            TensorFlow, and generated Python inference agreement.
+    """
     graph = extract_equation(model, reward_kind=kind)
     save_equation(graph, path)
     expected = model(inputs, training=False).numpy()
@@ -57,7 +86,11 @@ def export_error(model, inputs, kind, path):
 
 
 def main():
-    """Run equation fitting, pruning, checkpoint, and export consistency diagnostics."""
+    """Run equation fitting, pruning, checkpoint, and export consistency diagnostics.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=Path('.work/equation-learning-audit'))
     args = parser.parse_args()
@@ -174,7 +207,11 @@ def main():
 
     @tf.function
     def fit_polynomial():
-        """Apply one update to the polynomial fitting objective and regularization."""
+        """Apply one update to the polynomial fitting objective and regularization.
+
+        Returns:
+            None.
+        """
         with tf.GradientTape() as tape:
             predictions = polynomial(train_x, training=False)
             objective = tf.reduce_mean(tf.square(predictions - train_y)) + tf.add_n(polynomial.losses)

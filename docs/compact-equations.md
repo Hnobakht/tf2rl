@@ -24,7 +24,7 @@ export KERAS_HOME="$PWD/.cache/keras"
 mkdir -p "$TMPDIR" "$MPLCONFIGDIR" "$KERAS_HOME"
 EXPERT_DIR=results/equation-learning/sac/20261017T083343.306645_SAC_
 
-.venv-modern/bin/python -m tf2rl.experiments.cli \
+.venv-modern/bin/python -m tf2rl.experiments.train --runner imitation \
   --algorithm eqn-gail --env-name Pendulum-v1 --seed 13 \
   --expert-path-dir "$EXPERT_DIR" \
   --max-steps 20000 --n-warmup 1000 --units 64,64 \
@@ -139,7 +139,7 @@ sparsity phases were recorded, and all recorded training metrics were finite.
 Play the selected policy:
 
 ```bash
-.venv-modern/bin/python -m tf2rl.experiments.cli \
+.venv-modern/bin/python -m tf2rl.experiments.train --runner imitation \
   --algorithm eqn-gail --env-name Pendulum-v1 --units 64,64 \
   --evaluate --show-test-progress --test-episodes 5 \
   --model-dir results/compact-equations/minimal/20261017T152314.227816_SAC_ \

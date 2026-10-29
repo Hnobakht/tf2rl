@@ -14,7 +14,29 @@ class Discriminator(tf.keras.Model):
 
     def __init__(self, state_shape, action_dim, units=(32, 32), decoder_units = (1,),
                  n_latent_unit=32, enable_sn=False, name="Discriminator", w_ini = 'orthogonal'):
-        """Build the expert-versus-agent discriminator with the requested architecture."""
+        """Build the expert-versus-agent discriminator with the requested architecture.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector. This
+                implementation does not read this argument.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            decoder_units (sequence[int] or int): Hidden widths used by the variational discriminator
+                decoder.
+            n_latent_unit (int): Number of latent coordinates in the variational discriminator.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            name (str): Name assigned to the model, operation, or registered component.
+            w_ini (str or keras.initializers.Initializer): Initializer for discriminator dense kernels.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            NotImplementedError: The requested operation or argument combination is unsupported by this
+                component.
+        """
         super().__init__(name=name)
         self._encoder_list = []
         self._decoder_list = []
@@ -35,7 +57,16 @@ class Discriminator(tf.keras.Model):
         # with tf.device("/cpu:0"):
         self(dummy_state, tf.constant(True))
     def _encoder_model(self, units, activation):
-        """Build the encoder that predicts latent Gaussian parameters."""
+        """Build the encoder that predicts latent Gaussian parameters.
+
+        Args:
+            units (sequence[int]): Hidden-layer widths in forward order.
+            activation (str or callable or None): Output activation; None leaves the affine output
+                linear.
+
+        Returns:
+            None.
+        """
         index=0
         for unit in units:
             self._encoder_list.append(Dense(unit, name="L_EN"+str(index),
@@ -44,7 +75,18 @@ class Discriminator(tf.keras.Model):
             index += 1
 
     def _decoder_model(self, units, activation, output_activation):
-        """Build the discriminator network that maps latent samples to outputs."""
+        """Build the discriminator network that maps latent samples to outputs.
+
+        Args:
+            units (sequence[int]): Decoder layer widths; (1,) selects a direct scalar output.
+            activation (str or callable or None): Output activation; None leaves the affine output
+                linear.
+            output_activation (str or callable or None): Activation used by the scalar or discriminator
+                output layer.
+
+        Returns:
+            None.
+        """
         if  not units[0] == 1:
             index = 0
             for unit in units:
@@ -65,6 +107,17 @@ class Discriminator(tf.keras.Model):
     def call(self, inputs, training):
         """Encode inputs, sample latent features, and return discriminator outputs and latent
         statistics.
+
+        Args:
+            inputs (tuple[tf.Tensor, tf.Tensor]): State batch (including its final absorbing indicator)
+                and aligned action or successor-state batch.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor]: Scalar discriminator outputs, latent means, and
+                latent log standard deviations. In evaluation mode some historical variants return the
+                mean in both latent-statistic slots.
         """
         features = inputs
 
@@ -91,7 +144,21 @@ class Discriminator(tf.keras.Model):
 class InputModel(tf.keras.Model):
     """Feature model used by the variational energy-based discriminator."""
     def __init__(self, state_shape, action_dim, units, activation='relu', name="InputModel", w_ini='orthogonal', trainable=True):
-        """Build the feature layers feeding the variational energy-based discriminator."""
+        """Build the feature layers feeding the variational energy-based discriminator.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            activation (str or callable or None): Output activation; None leaves the affine output
+                linear.
+            name (str): Name assigned to the model, operation, or registered component.
+            w_ini (str or keras.initializers.Initializer): Initializer for discriminator dense kernels.
+            trainable (bool): Whether Keras should include this layer parameters in optimization.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
         self.layer_1 = Dense(units, name="L1_"+str(name),
                              activation=activation if trainable else 'sigmoid',
@@ -112,7 +179,15 @@ class InputModel(tf.keras.Model):
         self((dummy_state, dummy_action))
 
     def call(self, inputs):
-        """Transform inputs into features for the energy-based discriminator."""
+        """Transform inputs into features for the energy-based discriminator.
+
+        Args:
+            inputs (tf.Tensor): Batched discriminator inputs with concatenated state/action or
+                state/successor coordinates as required by the model.
+
+        Returns:
+            tf.Tensor: Encoded input features preserving the leading batch dimension.
+        """
         features = tf.concat(inputs, axis=1)
         print("[DEBUG] initializing InputModel {} [call {} Discriminator-VAIL_EBM]"
               .format(str(self.name) ,features.shape))
@@ -137,7 +212,33 @@ class VAIL_EBM(VAIL):
             name="VAIL_EBM",
             is_debug=False,
             **kwargs):
-        """Configure the imitation objective, discriminator networks, and optimizer settings."""
+        """Configure the imitation objective, discriminator networks, and optimizer settings.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            decoder_units (sequence[int] or int): Hidden widths used by the variational discriminator
+                decoder.
+            n_latent_unit (int): Number of latent coordinates in the variational discriminator.
+            lr (float): Optimizer learning rate.
+            kl_target (float): Target KL divergence for the variational information bottleneck.
+            reg_param (float): Initial multiplier for the variational KL constraint.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            grad_penalty_coeff (float): Coefficient multiplying the discriminator gradient penalty.
+            n_training (int): Number of discriminator training attempts per scheduled generator update.
+                This implementation does not read this argument.
+            name (str): Name assigned to the model, operation, or registered component.
+            is_debug (bool): Enable additional discriminator/parameter diagnostics where implemented.
+            **kwargs (dict): Additional keyword arguments forwarded to VAIL construction.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            NotImplementedError: It is not working!.
+        """
         RewardLearner.__init__(self, name=name, n_training=1, **kwargs)
         assert isinstance(decoder_units, tuple) and isinstance(units, tuple), \
             "[ERORR] the units should be tuple[__init__ VAIL_EBM]"
@@ -165,8 +266,18 @@ class VAIL_EBM(VAIL):
 
     def train(self, agent_states, agent_acts, expert_states, expert_acts, **kwargs):
         # with tf.device(self.device):
-        """
-        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """Update the discriminator from agent/expert minibatches and write training
+        diagnostics to TensorBoard.
+
+        Args:
+            agent_states (array_like): Agent observation batch shaped (agent_batch, *state_shape).
+            agent_acts (array_like): Agent actions aligned with agent_states.
+            expert_states (array_like): Expert observation batch shaped (expert_batch, *state_shape).
+            expert_acts (array_like): Expert actions aligned with expert_states.
+            **kwargs (dict): Additional compatibility keyword options, currently unused.
+
+        Returns:
+            None.
         """
         agent_states, agent_acts, expert_states, expert_acts = \
             tuple([tf.constant(i) for i in (agent_states, agent_acts, expert_states, expert_acts)])
@@ -191,8 +302,20 @@ class VAIL_EBM(VAIL):
             [tf.summary.histogram(name=self.policy_name + "/agent, {}".format(i.shape), data=i) for i in self.agent_model.get_weights()]
 
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts, training):
-        """
-        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """Apply discriminator gradients for the expert and agent batches and return training
+        metrics.
+
+        Args:
+            agent_states (array_like): Agent observation batch shaped (agent_batch, *state_shape).
+            agent_acts (array_like): Agent actions aligned with agent_states.
+            expert_states (array_like): Expert observation batch shaped (expert_batch, *state_shape).
+            expert_acts (array_like): Expert actions aligned with expert_states.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+
+        Returns:
+            tuple[tf.Tensor, ...]: Total loss, accuracy, expert/agent latent KL, JS diagnostic, and
+                agent input-model loss after the model updates.
         """
         epsilon = 1e-8
         grad_out = None
@@ -239,8 +362,19 @@ class VAIL_EBM(VAIL):
         return loss, accuracy, real_kl, fake_kl, js_divergence, loss_agent
 
     def _inference_body(self, states, actions, training):
-        """
-        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """Return learned imitation rewards for the supplied observations and actions or
+        transitions.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+
+        Returns:
+            tf.Tensor: Stabilized discriminator log-odds rewards shaped (batch, 1). Evaluation uses the
+                latent mean rather than a sampled latent.
         """
         print("[DEBUG] initializing {_inference_body VAIL_EBM}")
         false_val = tf.constant(False)
@@ -249,7 +383,16 @@ class VAIL_EBM(VAIL):
         return out
 
     def _init_static_graph(self, state_shape, action_dim, n_latent_unit):
-        """Set up TensorFlow signatures and traced model, training, or inference computations."""
+        """Set up TensorFlow signatures and traced model, training, or inference computations.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            n_latent_unit (int): Number of latent coordinates in the variational discriminator.
+
+        Returns:
+            None.
+        """
         print("[DEBUG] initializing {_init_static_graph VAIL_EBM}")
         # Compiling the static graphs
         assert len(state_shape) == 1, "[ERROR] This SAC only supports RAM env {_init_static_graph VAIL_EBM}"

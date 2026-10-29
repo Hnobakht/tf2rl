@@ -14,7 +14,11 @@ from pathlib import Path
 
 
 def device_info():
-    """Record the runtime and hardware used by the child training processes."""
+    """Record the runtime and hardware used by the child training processes.
+
+    Returns:
+        dict: CPU name/count, GPU driver query, dependency versions, and Python version.
+    """
     versions = {}
     for package in ("tensorflow", "gymnasium", "mujoco", "mujoco-warp", "warp-lang", "cpprb"):
         try:
@@ -47,7 +51,17 @@ def device_info():
 
 
 def summarize(metrics, warmup_windows):
-    """Use completed work and synchronized timings, excluding initial report windows."""
+    """Use completed work and synchronized timings, excluding initial report windows.
+
+    Args:
+        metrics (dict): Recorded training metrics and iteration reports.
+        warmup_windows (int): Number of initial benchmark reporting windows excluded from timing
+            summaries.
+
+    Returns:
+        dict: Measured transitions/updates, collection/training durations, throughputs, update
+            latency, variability, and model devices after discarding warmup windows.
+    """
     windows = metrics["iterations"][warmup_windows:]
     steps = sum(row["transitions"] for row in windows)
     updates = sum(row["updates"] for row in windows)
@@ -75,7 +89,15 @@ def summarize(metrics, warmup_windows):
 
 
 def save_report(output, report):
-    """Save incremental results so every completed combination remains reviewable."""
+    """Save incremental results so every completed combination remains reviewable.
+
+    Args:
+        output (Path): Destination directory for the JSON and Markdown benchmark reports.
+        report (dict): Benchmark results to serialize and render.
+
+    Returns:
+        None.
+    """
     rows = report["results"]
     for row in rows:
         baseline = next(
@@ -143,6 +165,16 @@ def save_report(output, report):
 
 
 def main():
+    """Run CPU/GPU off-policy benchmark configurations and write timing, device, and throughput
+    reports.
+
+    Returns:
+        None.
+
+    Raises:
+        RuntimeError: Measured sample counts differ between combinations. Measured optimizer work
+            differs between combinations.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-name", default="HalfCheetah-v5")
     parser.add_argument("--num-envs", nargs="+", type=int, default=[64, 256, 1024])
@@ -202,7 +234,9 @@ def main():
             command = [
                 sys.executable,
                 "-m",
-                "tf2rl.experiments.off_policy",
+                "tf2rl.experiments.train",
+                "--runner",
+                "off_policy",
                 "--algorithm",
                 "sac",
                 "--env-name",

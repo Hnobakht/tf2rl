@@ -28,6 +28,16 @@ from tf2rl.utils.tensorflow import configure_tensorflow
 
 
 def run_off_policy(args):
+    """Assemble environments, replay, agent, checkpoints, and trainer, then run vector off-
+    policy learning.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+    Returns:
+        dict: Run summary containing environment/learner counters, timing, configuration,
+            checkpoint, and optional evaluation results.
+    """
     config.validate_off_policy(args)
     configure_tensorflow(args.seed, args.cpu_threads, args.cpu_inter_threads)
     with ExitStack() as resources:
@@ -79,6 +89,16 @@ def run_off_policy(args):
 
 
 def run_on_policy(args):
+    """Assemble the registered on-policy agent and vector rollout trainer, then execute
+    training.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+    Returns:
+        dict: Run summary with rollout/update counters, timing, checkpoint path, configuration, and
+            optional evaluation statistics.
+    """
     config.validate_on_policy(args)
     configure_tensorflow(args.seed, args.cpu_threads)
     with ExitStack() as resources:
@@ -105,6 +125,17 @@ def run_on_policy(args):
 
 
 def run_imitation(args):
+    """Assemble the scalar expert/imitation recipe, restore requested models, and run training
+    or evaluation.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+    Returns:
+        cpprb.ReplayBuffer or tuple[float, float] or dict: Scalar training returns its replay
+            buffer; scalar evaluation mode returns mean return/length; vector training returns a
+            run-summary dictionary.
+    """
     preload_imitation_algorithms()
     config.validate_imitation(args)
     if args.debug:
@@ -159,6 +190,19 @@ _PARSERS = {
 
 
 def main(argv=None, algorithm=None, runner=None):
+    """Parse and validate an experiment recipe, then dispatch to its assembly function.
+
+    Args:
+        argv (sequence[str] or None): Command-line tokens; None reads the current process arguments.
+        algorithm (str or None): Algorithm identifier or default selection for the experiment
+            recipe.
+        runner (str or None): Experiment recipe: off_policy, on_policy, or imitation.
+
+    Returns:
+        dict or cpprb.ReplayBuffer or tuple[float, float]: Selected recipe result. Vector recipes
+            return a summary; the scalar imitation/expert recipe returns replay or an evaluation
+            pair.
+    """
     selector = argparse.ArgumentParser(add_help=False)
     selector.add_argument("--runner", choices=tuple(_RUNNERS), default=runner or "off_policy")
     selected, remaining = selector.parse_known_args(argv)
@@ -177,19 +221,51 @@ def main(argv=None, algorithm=None, runner=None):
 
 
 def imitation_main(argv=None):
-    return main(argv, runner="imitation")
+    """Launch the scalar imitation/expert recipe as a console command.
+
+    Args:
+        argv (sequence[str] or None): Command-line tokens; None reads the current process arguments.
+
+    Returns:
+        None.
+    """
+    main(argv, runner="imitation")
 
 
 def off_policy_main(argv=None):
-    return main(argv, runner="off_policy")
+    """Launch the vector off-policy recipe as a console command.
+
+    Args:
+        argv (sequence[str] or None): Command-line tokens; None reads the current process arguments.
+
+    Returns:
+        None.
+    """
+    main(argv, runner="off_policy")
 
 
 def on_policy_main(argv=None):
-    return main(argv, runner="on_policy")
+    """Launch the vector on-policy recipe as a console command.
+
+    Args:
+        argv (sequence[str] or None): Command-line tokens; None reads the current process arguments.
+
+    Returns:
+        None.
+    """
+    main(argv, runner="on_policy")
 
 
 def ppo_main(argv=None):
-    return main(argv, runner="on_policy", algorithm="ppo")
+    """Launch the on-policy console recipe with PPO as the default algorithm.
+
+    Args:
+        argv (sequence[str] or None): Command-line tokens; None reads the current process arguments.
+
+    Returns:
+        None.
+    """
+    main(argv, runner="on_policy", algorithm="ppo")
 
 
 if __name__ == "__main__":

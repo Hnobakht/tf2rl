@@ -13,7 +13,21 @@ class QFunc(tf.keras.Model):
     def __init__(self, state_shape, action_dim, units=(32, 32),
                  name="CategoricalQFunc", enable_dueling_dqn=False,
                  enable_noisy_dqn=False, n_atoms=51):
-        """Build the discrete-action value network with the requested optional DQN enhancements."""
+        """Build the discrete-action value network with the requested optional DQN
+        enhancements.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            name (str): Name assigned to the model, operation, or registered component.
+            enable_dueling_dqn (bool): Separate the value and advantage heads of the Q network.
+            enable_noisy_dqn (bool): Use noisy dense layers for value-based exploration.
+            n_atoms (int): Number of atoms in each categorical return distribution.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
         self._enable_dueling_dqn = enable_dueling_dqn
         self._enable_noisy_dqn = enable_noisy_dqn
@@ -32,7 +46,15 @@ class QFunc(tf.keras.Model):
             self(tf.constant(np.zeros(shape=(1,) + state_shape, dtype=np.float32)))
 
     def call(self, inputs):
-        """Return a categorical return distribution for each action in the batch."""
+        """Return a categorical return distribution for each action in the batch.
+
+        Args:
+            inputs (tf.Tensor): Observation batch shaped (batch, *state_shape); pixel models accept
+                image observations.
+
+        Returns:
+            tf.Tensor: Clipped return-atom probabilities shaped (batch, action_dim, n_atoms).
+        """
         features = self.l1(inputs)
         features = self.l2(features)
         features = self.l3(features)
@@ -54,7 +76,11 @@ class QFunc(tf.keras.Model):
 
     @property
     def n_atoms(self):
-        """Return the number of support atoms in each action-value distribution."""
+        """Return the number of support atoms in each action-value distribution.
+
+        Returns:
+            int: Number of atoms used by each categorical action-value distribution.
+        """
         return self._n_atoms
 
 
@@ -79,7 +105,33 @@ class CategoricalDQN(OffPolicyAgent):
             enable_dueling_dqn=False,
             enable_noisy_dqn=False,
             **kwargs):
-        """Configure the agent's networks, optimizers, and training hyperparameters."""
+        """Configure the agent's networks, optimizers, and training hyperparameters.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            q_func (keras.Model or None): Optional Q network replacing the default architecture.
+            name (str): Name assigned to the model, operation, or registered component.
+            lr (float): Optimizer learning rate.
+            adam_eps (float): Numerical stabilizer supplied to the Adam optimizer.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            epsilon (float): Probability of a uniformly random action during epsilon-greedy exploration.
+            epsilon_min (float or None): Final epsilon used by the optional linear exploration schedule.
+            epsilon_decay_step (int): Number of environment steps over which epsilon decays.
+            n_warmup (int): Number of physical transitions collected with random actions before
+                learning.
+            target_replace_interval (int): Learner-update interval between hard copies of target Q
+                parameters.
+            memory_capacity (int): Maximum number of transitions retained in replay.
+            enable_double_dqn (bool): Select successor actions online and evaluate them using the target
+                Q network.
+            enable_dueling_dqn (bool): Separate the value and advantage heads of the Q network.
+            enable_noisy_dqn (bool): Use noisy dense layers for value-based exploration.
+            **kwargs (dict): Additional keyword arguments forwarded to OffPolicyAgent construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
 
         q_func = q_func if q_func is not None else QFunc
@@ -131,7 +183,20 @@ class CategoricalDQN(OffPolicyAgent):
         self._enable_noisy_dqn = enable_noisy_dqn
 
     def get_action(self, state, test=False, tensor=False):
-        """Select an action for one observation or a batch; test mode disables exploration."""
+        """Select an action for one observation or a batch; test mode disables exploration.
+
+        Args:
+            state (np.ndarray or tf.Tensor or LazyFrames): One observation or batch. LazyFrames is
+                materialized; tensor=False requires NumPy input.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+            tensor (bool): Return a TensorFlow tensor instead of converting the action to NumPy, where
+                implemented.
+
+        Returns:
+            int or np.ndarray or tf.Tensor: Epsilon-greedy action index or index batch; tensor=True
+                returns a tensor, retaining the greedy batch axis for a single observation.
+        """
         if isinstance(state, LazyFrames):
             state = np.array(state)
         if not tensor:
@@ -162,14 +227,40 @@ class CategoricalDQN(OffPolicyAgent):
 
     @tf.function
     def _get_action_body(self, state):
-        """Return greedy actions from the batched Q-network predictions."""
+        """Return greedy actions from the batched Q-network predictions.
+
+        Args:
+            state (tf.Tensor): Observation batch shaped (batch, *state_shape); callers must add a batch
+                axis to individual observations.
+
+        Returns:
+            tf.Tensor: Greedy discrete action indices of shape (batch,), maximizing expected Q-values.
+        """
         action_probs = self.q_func(state)
         return tf.argmax(
             tf.reduce_sum(action_probs * self._z_list_broadcasted, axis=2),
             axis=1)
 
     def train(self, states, actions, next_states, rewards, done, weights=None):
-        """Update the Q network from a replay minibatch and return temporal-difference errors."""
+        """Update the categorical Q network, scheduled targets, and exploration rate, returning
+        the replay diagnostic.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            done (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
+            weights (array_like or None): Per-transition importance-sampling weights, shaped (batch,) or
+                (batch, 1); public update methods replace None with unit weights.
+
+        Returns:
+            tf.Tensor: Per-transition replay-priority diagnostic produced by the update.
+        """
         if weights is None:
             weights = np.ones_like(rewards)
         td_errors, q_func_loss = self._train_body(
@@ -193,7 +284,25 @@ class CategoricalDQN(OffPolicyAgent):
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, done, weights):
-        """Apply a Q-network gradient update and update target weights when due."""
+        """Apply a Q-network gradient update using the categorical error diagnostic.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            done (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
+            weights (array_like or None): Per-transition importance-sampling weights, shaped (batch,) or
+                (batch, 1); public update methods replace None with unit weights.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Per-transition TD/prioritization errors and scalar Q-network
+                loss; parameters and scheduled targets are updated in place.
+        """
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 td_errors = self._compute_td_error_body(
@@ -211,7 +320,23 @@ class CategoricalDQN(OffPolicyAgent):
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
         # TODO: fix this ugly conversion
-        """Return temporal-difference errors for the supplied transition batch."""
+        """Return temporal-difference errors for the supplied transition batch.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
+
+        Returns:
+            tf.Tensor: Per-transition error diagnostic for replay priority calculation without applying
+                gradients.
+        """
         if isinstance(actions, tf.Tensor):
             actions = tf.expand_dims(actions, axis=1)
             rewards = tf.expand_dims(rewards, axis=1)
@@ -222,18 +347,23 @@ class CategoricalDQN(OffPolicyAgent):
 
     @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
-        """
+        """Compute per-sample log-probability errors against the projected categorical Bellman
+        distribution.
+
         Args:
-            states:
-            actions:
-            next_states:
-            rewards:
-                Shape should be (batch_size, 1)
-            dones:
-                Shape should be (batch_size, 1)
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
 
         Returns:
-
+            tf.Tensor: Per-transition error diagnostic computed from online predictions and target-
+                network values.
         """
         batch_size = states.shape[0]
         actions = tf.cast(actions, dtype=tf.int32)
@@ -306,7 +436,14 @@ class CategoricalDQN(OffPolicyAgent):
 
     @staticmethod
     def get_argument(parser=None):
-        """Add this component's command-line options and return the argument parser."""
+        """Add this component's command-line options and return the argument parser.
+
+        Args:
+            parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+        Returns:
+            argparse.ArgumentParser: Parser extended with the supported component options.
+        """
         parser = OffPolicyAgent.get_argument(parser)
         parser.add_argument('--enable-double-dqn', action='store_true')
         parser.add_argument('--enable-dueling-dqn', action='store_true')

@@ -17,7 +17,15 @@ from tensorboard.backend.event_processing.event_accumulator import EventAccumula
 
 
 def inspect_run(path):
-    """Inspect saved arguments and TensorBoard records for one training run."""
+    """Inspect saved arguments and TensorBoard records for one training run.
+
+    Args:
+        path (str or Path): Input or output filesystem path used by this operation.
+
+    Returns:
+        dict: Run/checkpoint metadata, finite-metric checks, and recorded training/evaluation
+            statistics from the selected directory.
+    """
     args = json.loads((path / 'args.txt').read_text())
     algorithm = args['algorithm']
     events = EventAccumulator(str(path), size_guidance={'tensors': 0}).Reload()
@@ -93,7 +101,11 @@ def inspect_run(path):
 
 
 def main():
-    """Inspect training runs under a log directory and print their recorded metrics."""
+    """Inspect training runs under a log directory and print their recorded metrics.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('logdir', type=Path)
     args = parser.parse_args()

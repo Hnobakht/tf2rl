@@ -26,24 +26,29 @@ import tensorflow as tf
 def update_target_variables(
     target_variables, source_variables, tau=1.0, use_locking=False, name="update_target_variables"
 ):
-    """
-    Returns an op to update a list of target variables from source variables.
+    """Returns an op to update a list of target variables from source variables.
 
     The update rule is:
     `target_variable = (1 - tau) * target_variable + tau * source_variable`.
 
-    :param target_variables: a list of the variables to be updated.
-    :param source_variables: a list of the variables used for the update.
-    :param tau: weight used to gate the update. The permitted range is 0 < tau <= 1,
-        with small tau representing an incremental update, and tau == 1
-        representing a full update (that is, a straight copy).
-    :param use_locking: use `tf.Variable.assign`'s locking option when assigning
-        source variable values to target variables.
-    :param name: sets the `name_scope` for this op.
-    :raise TypeError: when tau is not a Python float
-    :raise ValueError: when tau is out of range, or the source and target variables
-        have different numbers or shapes.
-    :return: An op that executes all the variable updates.
+    Args:
+        target_variables (sequence[tf.Variable]): Destination variables updated from corresponding
+            source variables.
+        source_variables (sequence[tf.Variable]): Online/source variables paired with
+            target_variables.
+        tau (float): Target-network interpolation coefficient: target <- (1-tau)*target +
+            tau*online; 1 copies all weights.
+        use_locking (bool): Historical assignment-locking option retained by the target-update API.
+            This implementation does not read this argument.
+        name (str): Name assigned to the model, operation, or registered component. This
+            implementation does not read this argument.
+
+    Returns:
+        tf.Operation or None: Grouped assignment operation in graph mode; eager execution applies
+            the assignments immediately and returns None.
+
+    Raises:
+        ValueError: Target variables don't have the same shape as source variables.
     """
     if not isinstance(tau, float):
         raise TypeError("Tau has wrong type (should be float) {}".format(tau))
@@ -61,7 +66,17 @@ def update_target_variables(
         raise ValueError("Target variables don't have the same shape as source variables.")
 
     def update_op(target_variable, source_variable, tau):
-        """Assign source parameters to the target, interpolating when tau is below one."""
+        """Assign source parameters to the target, interpolating when tau is below one.
+
+        Args:
+            target_variable (tf.Variable): Destination variable receiving the interpolated assignment.
+            source_variable (tf.Variable): Source variable supplying the new parameter values.
+            tau (float): Target-network interpolation coefficient: target <- (1-tau)*target +
+                tau*online; 1 copies all weights.
+
+        Returns:
+            tf.Tensor: Assigned target-variable value, with the same shape and dtype as the target.
+        """
         if tau == 1.0:
             return target_variable.assign(source_variable)
         else:
@@ -83,8 +98,7 @@ def periodic_target_update(
     use_locking=False,
     name="periodic_target_update",
 ):
-    """
-    Returns an op to periodically update a list of target variables.
+    """Returns an op to periodically update a list of target variables.
 
     The `update_target_variables` op is executed every `update_period`
     executions of the `periodic_target_update` op.
@@ -92,20 +106,28 @@ def periodic_target_update(
     The update rule is:
     `target_variable = (1 - tau) * target_variable + tau * source_variable`.
 
-    :param target_variables: a list of the variables to be updated.
-    :param source_variables: a list of the variables used for the update.
-    :param update_period: inverse frequency with which to apply the update.
-    :param tau: weight used to gate the update. The permitted range is 0 < tau <= 1,
-        with small tau representing an incremental update, and tau == 1
-        representing a full update (that is, a straight copy).
-    :param use_locking: use `tf.variable.Assign`'s locking option when assigning
-        source variable values to target variables.
-    :param name: sets the `name_scope` for this op.
-    :return: An op that periodically updates `target_variables` with `source_variables`.
+    Args:
+        target_variables (sequence[tf.Variable]): Destination variables updated from corresponding
+            source variables.
+        source_variables (sequence[tf.Variable]): Online/source variables paired with
+            target_variables.
+        update_period (int): Number of calls between target-network updates.
+        tau (float): Target-network interpolation coefficient: target <- (1-tau)*target +
+            tau*online; 1 copies all weights.
+        use_locking (bool): Historical assignment-locking option retained by the target-update API.
+        name (str): Name assigned to the model, operation, or registered component.
+
+    Returns:
+        tf.Operation or tf.Tensor or None: Scheduled target-update operation; eager execution
+            applies the selected assignments immediately.
     """
 
     def update_op():
-        """Apply the configured target-network update."""
+        """Apply the configured target-network update.
+
+        Returns:
+            tf.Operation or None: Result of assigning the target variables from their paired sources.
+        """
         return update_target_variables(target_variables, source_variables, tau, use_locking)
 
     with tf.name_scope(name):
@@ -113,17 +135,14 @@ def periodic_target_update(
 
 
 def huber_loss(x, delta=1.0):
-    """
+    """Compute the elementwise quadratic/linear Huber penalty for prediction errors.
 
     Args:
-        x: np.ndarray or tf.Tensor
-            Values to compute the huber loss.
-        delta: float
-            Positive floating point value. Represents the
-            maximum possible gradient magnitude.
+        x (tf.Tensor): Elementwise prediction residuals to penalize.
+        delta (float): Huber-loss threshold between quadratic and linear error penalties.
 
-    Returns: tf.Tensor
-        The huber loss.
+    Returns:
+        tf.Tensor: Elementwise Huber losses with the same shape as x; no batch reduction is applied.
     """
     delta = tf.ones_like(x) * delta
     less_than_max = 0.5 * tf.square(x)
@@ -132,7 +151,17 @@ def huber_loss(x, delta=1.0):
 
 
 def configure_tensorflow(seed, cpu_threads, cpu_inter_threads=1):
-    """Configure a fresh vector-training process before constructing any tensors."""
+    """Configure a fresh vector-training process before constructing any tensors.
+
+    Args:
+        seed (int or None): Random seed; None leaves initialization to the underlying random
+            generator.
+        cpu_threads (int): TensorFlow intra-operation CPU thread count.
+        cpu_inter_threads (int): TensorFlow inter-operation CPU thread count.
+
+    Returns:
+        None.
+    """
     for gpu in tf.config.list_physical_devices("GPU"):
         tf.config.experimental.set_memory_growth(gpu, True)
     tf.config.threading.set_intra_op_parallelism_threads(cpu_threads)
@@ -166,8 +195,7 @@ behaving as a no-op in all other calls.
 
 
 def periodically(body, period, name="periodically"):
-    """
-    Periodically performs a tensorflow op.
+    """Periodically performs a tensorflow op.
 
     The body tensorflow op will be executed every `period` times the periodically
     op is executed. More specifically, with `n` the number of times the op has
@@ -178,14 +206,20 @@ def periodically(body, period, name="periodically"):
     If `period` is 0 or `None`, it would not perform any op and would return a
     `tf.no_op()`.
 
-    :param body (callable): callable that returns the tensorflow op to be performed every time
-        an internal counter is divisible by the period. The op must have no
-        output (for example, a tf.group()).
-    :param period (int): inverse frequency with which to perform the op.
-    :param name (str): name of the variable_scope.
-    :raise TypeError: if body is not a callable.
-    :raise ValueError: if period is negative.
-    :return: An op that periodically performs the specified op.
+    Args:
+        body (callable): Zero-argument TensorFlow operation factory executed at the requested
+            period.
+        period (int or None): Number of calls between executions; None or zero disables the
+            operation.
+        name (str): Name assigned to the model, operation, or registered component.
+
+    Returns:
+        tf.Operation or tf.Tensor or None: No-op when disabled, body result for period one, or the
+            counter-update operation for longer periods.
+
+    Raises:
+        TypeError: body must be callable.
+        ValueError: period cannot be less than 0.
     """
     if not callable(body):
         raise TypeError("body must be callable.")
@@ -209,7 +243,11 @@ def periodically(body, period, name="periodically"):
         )
 
         def _wrapped_body():
-            """Run the periodic operation and reset its invocation counter."""
+            """Run the periodic operation and reset its invocation counter.
+
+            Returns:
+                tf.Tensor: Counter value after executing the body and resetting the counter to one.
+            """
             with tf.control_dependencies([body()]):
                 # Done the deed, resets the counter.
                 return counter.assign(1)

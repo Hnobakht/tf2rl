@@ -2,16 +2,15 @@ import numpy as np
 
 
 def random_crop(input_imgs, output_size):
-    """
+    """Sample one spatial crop per channel-last image in a batch.
 
     Args:
-        input_imgs: np.ndarray
-            Images whose shape is (batch_size, width, height, channels)
-        output_size: Int
-            Output width and height size.
+        input_imgs (np.ndarray): Image batch shaped (batch, height, width, channels).
+        output_size (int): Width and height of the square image crop.
 
     Returns:
-
+        np.ndarray: Independently cropped image batch shaped (batch, output_size, output_size,
+            channels).
     """
     from skimage.util.shape import view_as_windows
 
@@ -33,16 +32,15 @@ def random_crop(input_imgs, output_size):
 
 
 def center_crop(img, output_size):
-    """
+    """Extract a centered square from a channel-last image or image batch.
 
     Args:
-        img: np.ndarray
-            Input image array. The shape is (width, height, channel)
-        output_size: int
-            Width and height size for output image
+        img (np.ndarray): Image or image batch with channels in the final axis.
+        output_size (int): Width and height of the square image crop.
 
     Returns:
-
+        np.ndarray: Center crop preserving the optional leading batch dimension and channel-last
+            layout.
     """
     is_single_img = img.ndim == 3
 
@@ -69,7 +67,22 @@ if __name__ == "__main__":
 
 
 def frames_to_gif(frames, prefix, save_dir, interval=50, fps=30):
-    """Save a sequence of image frames as an animated GIF."""
+    """Save a sequence of image frames as an animated GIF.
+
+    Args:
+        frames (sequence[np.ndarray]): Image frames in chronological order.
+        prefix (str): Filename prefix used for the exported movie.
+        save_dir (str or Path): Directory receiving the rendered GIF.
+        interval (float): Historical frame-interval argument; GIF timing is currently derived from
+            fps. This implementation does not read this argument.
+        fps (float): Frames per second used to compute exported frame durations.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: No frames to export.
+    """
     from pathlib import Path
 
     from PIL import Image

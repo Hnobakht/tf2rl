@@ -21,7 +21,20 @@ class Encoder(tf.keras.Model):
                  n_conv_filters=32,
                  name="curl_encoder",
                  output_logits=True):
-        """Build the convolutional image encoder and configure the latent feature dimension."""
+        """Build the convolutional image encoder and configure the latent feature dimension.
+
+        Args:
+            obs_shape (tuple[int, ...]): Shape of one observation or image, excluding the batch axis.
+            feature_dim (int): Width of the learned image representation.
+            n_conv_layers (int): Number of convolutional encoder layers.
+            n_conv_filters (int): Number of output filters in each encoder convolution.
+            name (str): Name assigned to the model, operation, or registered component.
+            output_logits (bool): Apply the encoder output normalization/activation path when enabled by
+                this implementation. This implementation does not read this argument.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         assert len(obs_shape) == 3
@@ -45,7 +58,15 @@ class Encoder(tf.keras.Model):
             self(tf.constant(dummy_obs))
 
     def call(self, inputs):
-        """Normalize byte images and return their convolutional latent features."""
+        """Normalize byte images and return their convolutional latent features.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+
+        Returns:
+            tf.Tensor: Encoded image features shaped (batch, feature_dim).
+        """
         features = tf.divide(tf.cast(inputs, tf.float32),
                              tf.constant(255.))
 
@@ -70,7 +91,22 @@ class CURLSAC(SAC):
                  lr_sac=1e-3,
                  lr_alpha=1e-4,
                  **kwargs):
-        """Configure the agent's networks, optimizers, and training hyperparameters."""
+        """Configure the agent's networks, optimizers, and training hyperparameters.
+
+        Args:
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            obs_shape (tuple[int, ...]): Shape of one observation or image, excluding the batch axis.
+            n_conv_layers (int): Number of convolutional encoder layers.
+            n_conv_filters (int): Number of output filters in each encoder convolution.
+            feature_dim (int): Width of the learned image representation.
+            encoder_tau (float): Soft-update coefficient for the target image encoder.
+            lr_sac (float): Learning rate used for SAC and representation updates in this variant.
+            lr_alpha (float): Entropy-temperature optimizer learning rate.
+            **kwargs (dict): Additional keyword arguments forwarded to SAC construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(state_shape=(feature_dim,),
                          action_dim=action_dim,
                          name="CURLSAC",
@@ -95,8 +131,24 @@ class CURLSAC(SAC):
         self.state_ndim = 3
 
     def train(self, states, actions, next_states, rewards, dones, weights=None):
-        """
-        Update the actor and critics from a replay minibatch and return temporal-difference errors.
+        """Update the actor and critics from a replay minibatch and return temporal-difference
+        errors.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
+            weights (array_like or None): Per-transition importance-sampling weights, shaped (batch,) or
+                (batch, 1); public update methods replace None with unit weights.
+
+        Returns:
+            tf.Tensor: Replay-priority TD diagnostic from the SAC and contrastive representation update.
         """
         if weights is None:
             weights = np.ones_like(rewards)
@@ -127,19 +179,59 @@ class CURLSAC(SAC):
         return td_errors
 
     def get_action(self, state, test=False):
-        """Select an action for one observation or a batch; test mode disables exploration."""
+        """Select an action for one observation or a batch; test mode disables exploration.
+
+        Args:
+            state (array_like): One observation shaped state_shape, or a batch shaped (batch,
+                *state_shape).
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            object: SAC action-selection result after center-cropping the supplied observation images.
+        """
         state = center_crop(state, self._input_img_size)
         return super().get_action(state, test)
 
     @tf.function
     def _get_action_body(self, state, test):
-        """Compute policy actions for a batch on the configured TensorFlow device."""
+        """Compute policy actions for a batch on the configured TensorFlow device.
+
+        Args:
+            state (tf.Tensor): Observation batch shaped (batch, *state_shape); callers must add a batch
+                axis to individual observations.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tf.Tensor: Actions from the encoded image batch.
+        """
         encoded_state = self._encoder(state)
         actions, log_pis = self.actor(encoded_state, test)
         return actions
 
     def _train_body(self, obses_anchor, obses_negative, actions, next_obses_anchor, rewards, dones, weights):
-        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """Apply actor and critic gradient updates, update target networks, and return
+        diagnostics.
+
+        Args:
+            obses_anchor (tf.Tensor): Anchor image crops used for representation and critic learning.
+            obses_negative (tf.Tensor): Independently cropped images used for the contrastive
+                representation objective.
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_obses_anchor (tf.Tensor): Cropped successor images used for the contrastive SAC target.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): True MDP termination flags aligned with the replay batch; time-limit
+                truncations should remain zero.
+            weights (array_like or None): Per-transition importance-sampling weights, shaped (batch,) or
+                (batch, 1); public update methods replace None with unit weights. This implementation
+                does not read this argument.
+
+        Returns:
+            tuple[tf.Tensor, ...]: TD errors, actor/V/Q1 losses, minimum/maximum/mean logp, contrastive
+                loss, mean anchor/negative embeddings, and mean contrastive logits.
         """
         with tf.device(self.device):
             assert len(dones.shape) == 2

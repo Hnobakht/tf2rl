@@ -12,7 +12,11 @@ from pathlib import Path
 
 
 def main():
-    """Run the configured training and validation pipeline."""
+    """Run the configured training and validation pipeline.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--steps', type=int, default=20000)
     parser.add_argument('--warmup', type=int, default=1000)
@@ -46,7 +50,7 @@ def main():
         directory = output / algorithm
         directory.mkdir(parents=True, exist_ok=True)
         before = set(directory.iterdir())
-        command = [sys.executable, '-m', 'tf2rl.experiments.cli', '--algorithm', algorithm,
+        command = [sys.executable, '-m', 'tf2rl.experiments.train', '--runner', 'imitation', '--algorithm', algorithm,
                    '--seed', str(seed), '--logdir', str(directory),
                    '--dir-suffix', f'pendulum_seed{seed}', *common]
         if expert is None:

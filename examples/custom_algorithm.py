@@ -12,6 +12,14 @@ class ConservativePPO(PPO):
     """Example research variant using tighter policy-change thresholds."""
 
     def __init__(self, **kwargs):
+        """Initialize ConservativePPO and its configuration.
+
+        Args:
+            **kwargs (dict): Additional keyword arguments forwarded to PPO construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         kwargs.setdefault("clip_ratio", 0.1)
         kwargs.setdefault("target_kl", 0.02)
         super().__init__(**kwargs)

@@ -11,7 +11,11 @@ import tensorflow as tf
 class _EquationParameters(tf.keras.layers.Layer):
     """Shared equation-layer weight masking and permanent pruning operations."""
     def _build_masks(self):
-        """Create non-trainable weight and bias masks when sparsity is enabled."""
+        """Create non-trainable weight and bias masks when sparsity is enabled.
+
+        Returns:
+            None.
+        """
         if self.sparse:
             self.w_mask = self.add_weight(name="w_mask", shape=self.w.shape,
                                           initializer="ones", trainable=False)
@@ -19,19 +23,39 @@ class _EquationParameters(tf.keras.layers.Layer):
                                           initializer="ones", trainable=False)
 
     def effective_parameters(self):
-        """Return weights and biases with sparsity masks applied when enabled."""
+        """Return weights and biases with sparsity masks applied when enabled.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Weight matrix and bias vector after applying permanent masks,
+                or the underlying variables if sparsity is disabled.
+        """
         if self.sparse:
             return self.w * self.w_mask, self.b * self.b_mask
         return self.w, self.b
 
     def project_masks(self):
-        """Force pruned equation weights and biases back to zero in place."""
+        """Force pruned equation weights and biases back to zero in place.
+
+        Returns:
+            None.
+        """
         if self.sparse:
             self.w.assign(self.w * self.w_mask)
             self.b.assign(self.b * self.b_mask)
 
     def prune(self, threshold):
-        """Permanently mask parameters below the threshold; require sparsity to be enabled."""
+        """Permanently mask parameters below the threshold; require sparsity to be enabled.
+
+        Args:
+            threshold (float): Absolute parameter magnitude below which pruning permanently clears mask
+                entries.
+
+        Returns:
+            None.
+
+        Raises:
+            ValueError: Construct the network with sparsity enabled before pruning.
+        """
         if not self.sparse:
             raise ValueError("Construct the network with sparsity enabled before pruning")
         self.w_mask.assign(self.w_mask * tf.cast(tf.abs(self.w) >= threshold, self.w.dtype))
@@ -58,7 +82,32 @@ class EquationLayer(_EquationParameters):
     def __init__(self, w_initializer="random_normal", b_initializer="random_normal", v=1,
                  lmbda=0, constraint=None, mask=None, exclude=None, dynamic_lmbda=False,
                  sparse=False, **kwargs):
-        """Configure operator groups, exclusions, initializers, and optional sparsity masks."""
+        """Configure operator groups, exclusions, initializers, and optional sparsity masks.
+
+        Args:
+            w_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                weights.
+            b_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                biases.
+            v (int): Positive number of repetitions of the enabled operator dictionary.
+            lmbda (float): L1 regularization coefficient for equation parameters.
+            constraint (callable or None): Keras weight constraint applied when parameters are updated.
+            mask (array_like or None): Unused legacy mask argument; sparse=True creates persistent
+                internal masks instead.
+            exclude (sequence[str] or None): Operators to remove from id, sin, cos, sig, log, mult, div;
+                at least one must remain.
+            dynamic_lmbda (bool): Enable the historical mutable regularization-coefficient path where
+                supported. This implementation does not read this argument.
+            sparse (bool): Allocate persistent masks used for staged sparsity and pruning.
+            **kwargs (dict): Additional keyword arguments forwarded to _EquationParameters construction.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            ValueError: Each equation layer needs a positive integer v. Cannot exclude every equation
+                operator. lmbda must be finite and nonnegative.
+        """
         super().__init__(**kwargs)
         if int(v) != v or v < 1:
             raise ValueError("Each equation layer needs a positive integer v")
@@ -79,7 +128,15 @@ class EquationLayer(_EquationParameters):
             raise ValueError("lmbda must be finite and nonnegative")
 
     def build(self, input_shape):
-        """Create layer weights and biases for the input feature dimension."""
+        """Create layer weights and biases for the input feature dimension.
+
+        Args:
+            input_shape (tuple[int, ...] or tf.TensorShape): Incoming tensor dimensions, including the
+                batch axis.
+
+        Returns:
+            None.
+        """
         width = self.input_width * self.v
         self.w = self.add_weight(name="w", shape=(input_shape[-1], width),
                                  initializer=self.w_initializer, constraint=self.constraint)
@@ -89,7 +146,20 @@ class EquationLayer(_EquationParameters):
         super().build(input_shape)
 
     def call(self, inputs, training=None, l1_regularizers=0):
-        """Apply affine equation operators and add L1 and log/division domain penalties."""
+        """Apply affine equation operators and add L1 and log/division domain penalties.
+
+        Args:
+            inputs (tf.Tensor): Input feature matrix shaped (batch, input_width); network input width is
+                observation width plus action_dim.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default. This implementation does not read this argument.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it. This implementation does not read this argument.
+
+        Returns:
+            tf.Tensor: Operator features shaped (batch, v * number_of_enabled_operators). L1 and
+                log/division domain penalties are registered in layer.losses.
+        """
         w, b = self.effective_parameters()
         affine = tf.matmul(inputs, w) + b
         if self.lmbda:
@@ -132,7 +202,29 @@ class EquationOutput(_EquationParameters):
     def __init__(self, w_initializer="random_normal", b_initializer="random_normal",
                  activation=None, lmbda=0, constraint=None, mask=None, dynamic_lmbda=False,
                  regularize=False, sparse=False, **kwargs):
-        """Configure the scalar output activation, initializers, and optional regularization."""
+        """Configure the scalar output activation, initializers, and optional regularization.
+
+        Args:
+            w_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                weights.
+            b_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                biases.
+            activation (str or callable or None): Output activation; None leaves the affine output
+                linear.
+            lmbda (float): L1 regularization coefficient for equation parameters.
+            constraint (callable or None): Keras weight constraint applied when parameters are updated.
+            mask (array_like or None): Unused legacy mask argument; sparse=True creates persistent
+                internal masks instead.
+            dynamic_lmbda (bool): Enable the historical mutable regularization-coefficient path where
+                supported. This implementation does not read this argument.
+            regularize (bool): Enable output-weight L1 and constraint settings; False forces its L1
+                coefficient to zero.
+            sparse (bool): Allocate persistent masks used for staged sparsity and pruning.
+            **kwargs (dict): Additional keyword arguments forwarded to _EquationParameters construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(**kwargs)
         self.w_initializer = tf.keras.initializers.get(w_initializer)
         self.b_initializer = tf.keras.initializers.get(b_initializer)
@@ -144,7 +236,15 @@ class EquationOutput(_EquationParameters):
         self.sparse = sparse
 
     def build(self, input_shape):
-        """Create layer weights and biases for the input feature dimension."""
+        """Create layer weights and biases for the input feature dimension.
+
+        Args:
+            input_shape (tuple[int, ...] or tf.TensorShape): Incoming tensor dimensions, including the
+                batch axis.
+
+        Returns:
+            None.
+        """
         self.w = self.add_weight(name="w", shape=(input_shape[-1], 1),
                                  initializer=self.w_initializer, constraint=self.constraint)
         self.b = self.add_weight(name="b", shape=(1,), initializer=self.b_initializer,
@@ -153,7 +253,20 @@ class EquationOutput(_EquationParameters):
         super().build(input_shape)
 
     def call(self, inputs, training=None, l1_regularizers=0):
-        """Return the scalar affine output with its configured activation and regularization."""
+        """Return the scalar affine output with its configured activation and regularization.
+
+        Args:
+            inputs (tf.Tensor): Input feature matrix shaped (batch, input_width); network input width is
+                observation width plus action_dim.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default. This implementation does not read this argument.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it. This implementation does not read this argument.
+
+        Returns:
+            tf.Tensor: Activated scalar outputs shaped (batch, 1), with configured parameter penalties
+                registered in layer.losses.
+        """
         w, b = self.effective_parameters()
         if self.lmbda:
             self.add_loss(tf.cast(self.lmbda, self.w.dtype)
@@ -169,7 +282,50 @@ class EquationNetwork(tf.keras.Model):
                  w_initializer="random_normal", b_initializer="random_normal",
                  is_lmbda_dynamic=False, regularize_output=False, training_stages=None,
                  prune_threshold=0.001):
-        """Build the equation layers and configure optional warmup, sparsity, and fixed-mask stages.
+        """Build the equation layers and configure optional warmup, sparsity, and fixed-mask
+        stages.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            num_layers (int): Number of equation layers.
+            drop_out (float or sequence[float] or None): Dropout probability, or one probability per
+                equation layer; None disables dropout.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it. This implementation does not read this argument.
+            output_activation (str or callable or None): Activation used by the scalar or discriminator
+                output layer.
+            lmbda (float): Nonnegative L1 coefficient; a positive value enables persistent sparsity
+                state.
+            name (str): Name assigned to the model, operation, or registered component.
+            v (sequence[int] or None): Positive operator repetition count per equation layer; None uses
+                one per layer.
+            exclude (sequence or None): Equation operators to exclude; network constructors use one
+                exclusion list per layer.
+            atol (float): Absolute weight threshold used by legacy tolerance-based inference copies.
+                This implementation does not read this argument.
+            constraint (callable or None): Keras weight constraint applied when parameters are updated.
+            w_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                weights.
+            b_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                biases.
+            is_lmbda_dynamic (bool): Historical dynamic-regularization option; unsupported
+                configurations may be rejected. This implementation does not read this argument.
+            regularize_output (bool): Enable the equation output layer regularization used by state-only
+                AIRL.
+            training_stages (sequence[int] or None): Pair (warmup_updates, sparse_updates) followed by
+                fixed-mask refitting. Counts are actual discriminator optimizer updates, not environment
+                steps.
+            prune_threshold (float): Prune parameters whose absolute values are below this threshold at
+                the refitting boundary.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            ValueError: lmbda must be finite and nonnegative. prune_threshold must be finite and
+                nonnegative. training_stages requires (warmup >= 0, sparse > 0) updates and lmbda > 0.
+                v, exclude and dropout lengths must equal num_layers. Dropout rates must lie in [0, 1).
         """
         super().__init__(name=name)
         if not math.isfinite(lmbda) or lmbda < 0:
@@ -227,7 +383,20 @@ class EquationNetwork(tf.keras.Model):
 
     def call(self, inputs, training=None, l1_regularizers=0):
         # Historically an omitted training flag enabled EQN dropout.
-        """Evaluate the equation network and add active L1 losses; omitted training enables dropout.
+        """Evaluate the equation network and add active L1 losses; omitted training enables
+        dropout.
+
+        Args:
+            inputs (tf.Tensor): Input feature matrix shaped (batch, input_width); network input width is
+                observation width plus action_dim.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it. This implementation does not read this argument.
+
+        Returns:
+            tf.Tensor: Scalar network predictions shaped (batch, 1); current equation-domain and
+                sparsity penalties are retained in model.losses.
         """
         training = True if training is None else training
         features = tf.cast(inputs, tf.float32)
@@ -240,11 +409,20 @@ class EquationNetwork(tf.keras.Model):
 
     @property
     def parameter_layers(self):
-        """Return equation layers and the output layer, excluding dropout layers."""
+        """Return equation layers and the output layer, excluding dropout layers.
+
+        Returns:
+            list: Equation hidden layers and scalar output layer in forward order; dropout layers are
+                excluded.
+        """
         return [layer for layer in self.eql_layers if isinstance(layer, EquationLayer)] + [self.layer_out]
 
     def l1_norm(self):
-        """Return the sum of absolute effective equation weights and biases."""
+        """Return the sum of absolute effective equation weights and biases.
+
+        Returns:
+            tf.Tensor: Scalar sum of absolute effective weights and biases across parameter layers.
+        """
         return tf.add_n([tf.reduce_sum(tf.abs(value)) for layer in self.parameter_layers
                          for value in layer.effective_parameters()])
 
@@ -254,6 +432,9 @@ class EquationNetwork(tf.keras.Model):
         Boundaries count completed discriminator optimizer steps, not physical
         environment steps. The final phase prunes once, removes L1 shrinkage,
         and refits surviving coefficients; masks and counters are checkpointed.
+
+        Returns:
+            None.
         """
         if not self.sparse:
             return
@@ -269,7 +450,11 @@ class EquationNetwork(tf.keras.Model):
         self.l1_coefficient.assign(self.sparsity_lambda if phase == 1 else 0.)
 
     def finish_update(self):
-        """Reapply pruning masks and count one completed discriminator update."""
+        """Reapply pruning masks and count one completed discriminator update.
+
+        Returns:
+            None.
+        """
         if self.sparse:
             # Adam momentum can move a masked weight despite a zero gradient.
             for layer in self.parameter_layers:
@@ -277,7 +462,12 @@ class EquationNetwork(tf.keras.Model):
             self.sparsity_updates.assign_add(1)
 
     def sparsity_metrics(self):
-        """Return the sparsity phase, active parameter count, L1 norm, and update diagnostics."""
+        """Return the sparsity phase, active parameter count, L1 norm, and update diagnostics.
+
+        Returns:
+            dict: Phase, active L1 coefficient/norm, active-parameter count, pruned fraction, and
+                discriminator optimizer-update count.
+        """
         total = sum(math.prod(value.shape) for layer in self.parameter_layers
                     for value in (layer.w, layer.b))
         active = (tf.add_n([tf.reduce_sum(value) for layer in self.parameter_layers
@@ -290,12 +480,27 @@ class EquationNetwork(tf.keras.Model):
                 "discriminator_updates": self.sparsity_updates if self.sparse else 0}
 
     def write_sparsity_summaries(self):
-        """Write equation sparsity diagnostics to TensorBoard when sparsity is enabled."""
+        """Write equation sparsity diagnostics to TensorBoard when sparsity is enabled.
+
+        Returns:
+            None.
+        """
         if self.sparse:
             for name, value in self.sparsity_metrics().items():
                 tf.summary.scalar("EQN/" + name, value)
 
     def compute_reward(self, inputs, l1_regularizers=0):
-        """Return stabilized discriminator log odds for each input sample."""
+        """Return stabilized discriminator log odds for each input sample.
+
+        Args:
+            inputs (tf.Tensor): Input feature matrix shaped (batch, input_width); network input width is
+                observation width plus action_dim.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it. This implementation does not read this argument.
+
+        Returns:
+            tf.Tensor: Log-odds rewards log(p+epsilon)-log(1-p+epsilon) shaped (batch, 1). The network
+                output must represent a probability.
+        """
         probability = self(inputs, training=False)
         return tf.math.log(probability + 1e-8) - tf.math.log(1 - probability + 1e-8)

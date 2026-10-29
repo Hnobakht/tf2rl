@@ -135,12 +135,12 @@ tf2rl-train -m experiment=ppo args.env_name=Pendulum-v1 args.seed=0,1,2
 
 Each Hydra job runs in a fresh process and saves its configuration, launch command,
 checkpoints and metrics in a separate directory. See [experiment configuration and
-extension](docs/history/experiments-before-architecture.md) for all presets, YAML values, demonstrations,
+extension](docs/experiments.md) for all presets, YAML values, demonstrations,
 custom configurations and the existing TensorFlow GPU container workflow.
 
-The common entry point is `eqn-train`, or `python -m tf2rl.experiments.cli`.
-Run `eqn-train --help` to see options. The existing four AIRL/GAIL example filenames
-forward to the same implementation and keep their corresponding algorithm selection.
+The common entry point is `eqn-train`, or `python -m tf2rl.experiments.train --runner imitation`.
+Run `eqn-train --help` to see options. Examples are in `examples/train_sac.py`,
+`examples/train_ppo.py`, `examples/train_imitation.py`, and `examples/custom_algorithm.py`.
 Training is stochastic; evaluation uses the policy mean. `--seed` sets Python, NumPy,
 TensorFlow and environment seeds. Different framework/physics versions may still
 produce different learning curves.
@@ -265,7 +265,7 @@ critics used by imitation experiments. `replay_mask_encoding="dac"` selects DAC
 masks even when absorbing transitions are disabled. The imitation and off-policy
 launchers set these options to preserve their existing experiment architectures.
 The former `SAC_IRL` class/module has been removed: migrate imports to
-`tf2rl.algos.sac.SAC` and pass `critic_layer_norm=False,
+`tf2rl.algos.rl.sac.SAC` and pass `critic_layer_norm=False,
 replay_mask_encoding="dac"` when restoring its checkpoints. Absorbing-state
 support remains independently controlled by `is_absorbed_state`.
 
@@ -297,9 +297,9 @@ The framework is organized around algorithms, data, and three trainers:
 - `tf2rl/experimental`: older distributed, model-based and on-policy IRL trainers.
 
 Start with [the architecture](docs/architecture.md) and
-[adding an algorithm](docs/adding_algorithms.md). Original imports and console
-commands remain compatible through forwarding modules. Existing experimental
-methods retain their previous validation limits.
+[adding an algorithm](docs/adding_algorithms.md). Use the module paths shown above; obsolete import shims and example launchers
+have been removed. Console commands point directly to `experiments/train.py`.
+Existing experimental methods retain their previous validation limits.
 
 ```bash
 python -m tf2rl.experiments.train --runner off_policy --algorithm sac --env-name Pendulum-v1

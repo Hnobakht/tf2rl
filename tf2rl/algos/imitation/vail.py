@@ -13,7 +13,29 @@ class Discriminator(tf.keras.Model):
 
     def __init__(self, state_shape, action_dim, units=(32, 32), decoder_units = (1,),
                  n_latent_unit=32, enable_sn=False, name="Discriminator", w_ini = 'orthogonal'):
-        """Build the expert-versus-agent discriminator with the requested architecture."""
+        """Build the expert-versus-agent discriminator with the requested architecture.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector. This
+                implementation does not read this argument.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            decoder_units (sequence[int] or int): Hidden widths used by the variational discriminator
+                decoder.
+            n_latent_unit (int): Number of latent coordinates in the variational discriminator.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            name (str): Name assigned to the model, operation, or registered component.
+            w_ini (str or keras.initializers.Initializer): Initializer for discriminator dense kernels.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            NotImplementedError: The requested operation or argument combination is unsupported by this
+                component.
+        """
         super().__init__(name=name)
         self._encoder_list = []
         self._decoder_list = []
@@ -31,7 +53,16 @@ class Discriminator(tf.keras.Model):
             raise NotImplementedError
 
     def _encoder_model(self, units, activation):
-        """Build the encoder that predicts latent Gaussian parameters."""
+        """Build the encoder that predicts latent Gaussian parameters.
+
+        Args:
+            units (sequence[int]): Hidden-layer widths in forward order.
+            activation (str or callable or None): Output activation; None leaves the affine output
+                linear.
+
+        Returns:
+            None.
+        """
         index=0
         for unit in units:
             self._encoder_list.append(Dense(unit, name="L_EN"+str(index),
@@ -40,7 +71,18 @@ class Discriminator(tf.keras.Model):
             index += 1
 
     def _decoder_model(self, units, activation, output_activation):
-        """Build the discriminator network that maps latent samples to outputs."""
+        """Build the discriminator network that maps latent samples to outputs.
+
+        Args:
+            units (sequence[int]): Decoder layer widths; (1,) selects a direct scalar output.
+            activation (str or callable or None): Output activation; None leaves the affine output
+                linear.
+            output_activation (str or callable or None): Activation used by the scalar or discriminator
+                output layer.
+
+        Returns:
+            None.
+        """
         if  not units[0] == 1:
             index = 0
             for unit in units:
@@ -61,6 +103,17 @@ class Discriminator(tf.keras.Model):
 
         """Encode inputs, sample latent features, and return discriminator outputs and latent
         statistics.
+
+        Args:
+            inputs (tuple[tf.Tensor, tf.Tensor]): State batch (including its final absorbing indicator)
+                and aligned action or successor-state batch.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor]: Scalar discriminator outputs, latent means, and
+                latent log standard deviations. In evaluation mode some historical variants return the
+                mean in both latent-statistic slots.
         """
         features = tf.concat((inputs[0][:,:-1], inputs[1]), axis=1)
         for layer in self._encoder_list:
@@ -105,7 +158,30 @@ class VAIL(RewardLearner):
             name="VAIL",
             is_debug = False,
             **kwargs):
-        """Configure the imitation objective, discriminator networks, and optimizer settings."""
+        """Configure the imitation objective, discriminator networks, and optimizer settings.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            decoder_units (sequence[int] or int): Hidden widths used by the variational discriminator
+                decoder.
+            n_latent_unit (int): Number of latent coordinates in the variational discriminator.
+            lr (float): Optimizer learning rate.
+            kl_target (float): Target KL divergence for the variational information bottleneck.
+            reg_param (float): Initial multiplier for the variational KL constraint.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            grad_penalty_coeff (float): Coefficient multiplying the discriminator gradient penalty.
+            n_training (int): Number of discriminator training attempts per scheduled generator update.
+                This implementation does not read this argument.
+            name (str): Name assigned to the model, operation, or registered component.
+            is_debug (bool): Enable additional discriminator/parameter diagnostics where implemented.
+            **kwargs (dict): Additional keyword arguments forwarded to RewardLearner construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         RewardLearner.__init__(self, name=name, n_training=1, **kwargs)
         assert isinstance(decoder_units, tuple) and isinstance(units, tuple),\
             "[ERORR] the units should be tuple[__init__ VAIL]"
@@ -127,8 +203,18 @@ class VAIL(RewardLearner):
         self._init_static_graph(state_shape, action_dim, n_latent_unit)
 
     def train(self, agent_states, agent_acts, expert_states, expert_acts, **kwargs):
-        """
-        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """Update the discriminator from agent/expert minibatches and write training
+        diagnostics to TensorBoard.
+
+        Args:
+            agent_states (array_like): Agent observation batch shaped (agent_batch, *state_shape).
+            agent_acts (array_like): Agent actions aligned with agent_states.
+            expert_states (array_like): Expert observation batch shaped (expert_batch, *state_shape).
+            expert_acts (array_like): Expert actions aligned with expert_states.
+            **kwargs (dict): Additional compatibility keyword options, currently unused.
+
+        Returns:
+            None.
         """
         with tf.device(self.device):
             agent_states, agent_acts, expert_states, expert_acts = \
@@ -151,7 +237,18 @@ class VAIL(RewardLearner):
                 [tf.summary.histogram(name=self.policy_name + "/L_logstd, {}".format(i.shape), data=i) for i in self.disc.l_logstd.get_weights()]
 
     def _compute_js_divergence(self, fake_logits, real_logits):
-        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs."""
+        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs.
+
+        Args:
+            fake_logits (tf.Tensor): Agent discriminator outputs used directly in the probability-based
+                divergence calculation.
+            real_logits (tf.Tensor): Expert discriminator outputs used directly in the probability-based
+                divergence calculation.
+
+        Returns:
+            tf.Tensor: Scalar stabilized probability-based Jensen-Shannon diagnostic between agent and
+                expert outputs.
+        """
         print("[DEBUG] initializing {_compute_js_divergence VAIL}")
         with tf.device(self.device):
             m = (fake_logits + real_logits) / 2.
@@ -160,15 +257,22 @@ class VAIL(RewardLearner):
         return js
 
     def _compute_kl_latent(self, means, log_stds):
-        r"""
-        Compute KL divergence of latent spaces over standard Normal
+        """Compute KL divergence of latent spaces over standard Normal
         distribution to compute loss in eq.5.  The formulation of
         KL divergence between two normal distributions is as follows:
-            ln(\sigma_2 / \sigma_1) + {(\mu_1 - \mu_2)^2 + \sigma_1^2 - \sigma_2^2} / (2 * \sigma_2^2)
+            ln(\\sigma_2 / \\sigma_1) + {(\\mu_1 - \\mu_2)^2 + \\sigma_1^2 - \\sigma_2^2} / (2 * \\sigma_2^2)
         Since the target distribution is standard Normal distributions,
-        we can assume `\sigma_2 = 1` and `mean_2 = 0`.
+        we can assume `\\sigma_2 = 1` and `mean_2 = 0`.
         So, the resulting equation can be computed as:
-            ln(1 / \sigma_1) + (\mu_1^2 + \sigma_1^2 - 1) / 2
+            ln(1 / \\sigma_1) + (\\mu_1^2 + \\sigma_1^2 - 1) / 2
+
+        Args:
+            means (tf.Tensor): Latent Gaussian means, shaped (batch, latent_width).
+            log_stds (tf.Tensor): Latent log standard deviations, shaped (batch, latent_width).
+
+        Returns:
+            tf.Tensor: Per-sample KL divergence from the diagonal latent Gaussian to the standard
+                normal, shaped (batch,).
         """
         print("[DEBUG] initializing {_compute_kl_latent VAIL}")
         with tf.device(self.device):
@@ -176,8 +280,20 @@ class VAIL(RewardLearner):
         return kl_dist
 
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts, training):
-        """
-        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """Apply discriminator gradients for the expert and agent batches and return training
+        metrics.
+
+        Args:
+            agent_states (array_like): Agent observation batch shaped (agent_batch, *state_shape).
+            agent_acts (array_like): Agent actions aligned with agent_states.
+            expert_states (array_like): Expert observation batch shaped (expert_batch, *state_shape).
+            expert_acts (array_like): Expert actions aligned with expert_states.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+
+        Returns:
+            tuple[tf.Tensor, ...]: Scalar total loss, accuracy, expert latent KL, agent latent KL, and
+                JS diagnostic, after discriminator and KL-multiplier updates.
         """
         epsilon = 1e-8
         with tf.device(self.device):
@@ -232,8 +348,19 @@ class VAIL(RewardLearner):
         return loss, accuracy, real_kl, fake_kl, js_divergence
 
     def inference(self, states, actions, next_states=None):
-        """
-        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """Return learned imitation rewards for the supplied observations and actions or
+        transitions.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like or None): Physical successor observations aligned with the current-
+                state batch. This implementation does not read this argument.
+
+        Returns:
+            tf.Tensor: Stabilized discriminator log-odds rewards shaped (batch, 1). Evaluation uses the
+                latent mean rather than a sampled latent.
         """
         if states.ndim == actions.ndim == 1:
             states = np.expand_dims(states, axis=0)
@@ -243,8 +370,19 @@ class VAIL(RewardLearner):
         return out
 
     def _inference_body(self, states, actions, training):
-        """
-        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """Return learned imitation rewards for the supplied observations and actions or
+        transitions.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+
+        Returns:
+            tf.Tensor: Stabilized discriminator log-odds rewards shaped (batch, 1). Evaluation uses the
+                latent mean rather than a sampled latent.
         """
         print("[DEBUG] initializing {_inference_body VAIL}")
         with tf.device(self.device):
@@ -253,7 +391,16 @@ class VAIL(RewardLearner):
         return out
 
     def _init_static_graph(self, state_shape, action_dim, n_latent_unit):
-        """Set up TensorFlow signatures and traced model, training, or inference computations."""
+        """Set up TensorFlow signatures and traced model, training, or inference computations.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            n_latent_unit (int): Number of latent coordinates in the variational discriminator.
+
+        Returns:
+            None.
+        """
         print("[DEBUG] initializing {_init_static_graph VAIL}")
         # Compiling the static graphs
         assert len(state_shape) == 1, "[ERROR] This SAC only supports RAM env {_init_static_graph SAC}"
@@ -293,7 +440,14 @@ class VAIL(RewardLearner):
 
     @staticmethod
     def get_argument(parser=None):
-        """Add this component's command-line options and return the argument parser."""
+        """Add this component's command-line options and return the argument parser.
+
+        Args:
+            parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+        Returns:
+            argparse.ArgumentParser: Parser extended with the supported component options.
+        """
         parser = RewardLearner.get_argument(parser)
         parser.add_argument('--units-decoder', type=str, default="1",
                             help='Decoder architecture for VAIL. use case: 128,128 or 400,300 <default: %(default)s>')
