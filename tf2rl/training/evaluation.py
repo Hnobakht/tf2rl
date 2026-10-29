@@ -11,7 +11,18 @@ from tf2rl.utils.images import frames_to_gif
 
 
 def evaluate_policy(trainer, total_steps):
-    """Evaluate the policy in the test environment and return its performance."""
+    """Evaluate the policy in the test environment and return its performance.
+
+    Args:
+        trainer (OffPolicyTrainer): Initialized trainer supplying policy, evaluation settings, and
+            output paths.
+        total_steps (int): Physical environment-step count used to label evaluation summaries and
+            trajectory files.
+
+    Returns:
+        tuple[float, float]: Mean undiscounted return and mean length over completed scalar
+            evaluation episodes; configured trajectories, videos, and summaries are also saved.
+    """
     returns, lengths = [], []
     horizon = trainer._horizon(trainer._test_env)
     for episode in range(trainer._test_episodes):
@@ -58,7 +69,20 @@ def evaluate_policy(trainer, total_steps):
 
 
 def evaluate_on_policy(policy, env_id, episodes, seed, env_kwargs):
-    """Evaluate deterministic actions in independent native Gymnasium episodes."""
+    """Evaluate deterministic actions in independent native Gymnasium episodes.
+
+    Args:
+        policy (Policy): Agent supplying action selection and learning operations.
+        env_id (str): Registered Gymnasium environment identifier.
+        episodes (int): Number of complete episodes to evaluate or collect.
+        seed (int or None): Random seed; None leaves initialization to the underlying random
+            generator.
+        env_kwargs (dict): Keyword options passed to the Gymnasium environment constructor.
+
+    Returns:
+        dict or None: Episode returns and mean_return, or None when episodes is zero. The temporary
+            environment is closed after evaluation.
+    """
     if episodes == 0:
         return None
     returns = []
@@ -102,6 +126,30 @@ def evaluate_vector_policy(
     DAC augmentation remains the loader's responsibility, so no absorbing loops
     are serialized or duplicated. Stochastic policies save densities evaluated
     at the exact executed actions, including deterministic evaluation actions.
+
+    Args:
+        policy (Policy): Agent supplying action selection and learning operations.
+        env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+            spaces, and interaction state.
+        episodes (int): Number of complete episodes to evaluate or collect.
+        seed (int or None): Random seed; None leaves initialization to the underlying random
+            generator.
+        output_dir (str or Path or None): Directory receiving metrics, trajectories, or rendered
+            artifacts.
+        total_steps (int): Physical environment-step count used to label evaluation summaries and
+            trajectory files.
+        deterministic (bool): Use the policy evaluation action instead of sampling during trajectory
+            collection.
+        metadata (dict or None): Additional provenance recorded with trajectories or exported
+            equations.
+
+    Returns:
+        dict: mean_return, mean_length, per-episode returns/lengths, and exported trajectory paths.
+            Physical final observations are used in saved transitions.
+
+    Raises:
+        ValueError: episodes must be positive. Cannot export nonfinite action log probabilities.
+            Cannot export nonfinite expert transitions.
     """
     import tensorflow as tf
 
@@ -203,6 +251,18 @@ import time
 
 
 def view_policy(argv=None):
+    """Parse viewer options, restore the requested policy, and run scalar evaluation with
+    rendering.
+
+    Args:
+        argv (sequence[str] or None): Command-line tokens; None reads the current process arguments.
+
+    Returns:
+        None.
+
+    Raises:
+        RuntimeError: OpenCV could not open the MP4 encoder.
+    """
     from tf2rl.experiments.build import make_on_policy_agent as make_policy
 
     parser = argparse.ArgumentParser(description=__doc__)

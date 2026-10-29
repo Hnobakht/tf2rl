@@ -44,7 +44,37 @@ class SAC(OffPolicyAgent):
             critic_layer_norm=True,
             replay_mask_encoding=None,
             **kwargs):
-        """Configure the agent's networks, optimizers, and training hyperparameters."""
+        """Configure the agent's networks, optimizers, and training hyperparameters.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            name (str): Name assigned to the model, operation, or registered component.
+            max_action (float): Symmetric continuous-action bound or output scale.
+            lr (float): Optimizer learning rate.
+            lr_alpha (float): Entropy-temperature optimizer learning rate.
+            actor_units (sequence[int]): Widths of the actor hidden layers.
+            critic_units (sequence[int]): Widths of the critic hidden layers.
+            is_pixels (bool): Select the image-observation network path.
+            tau (float): Target-network interpolation coefficient: target <- (1-tau)*target +
+                tau*online; 1 copies all weights.
+            alpha (float): Entropy-temperature coefficient used by SAC.
+            auto_alpha (bool): Learn the SAC entropy temperature instead of keeping alpha fixed.
+            n_warmup (int): Number of physical transitions collected with random actions before
+                learning.
+            memory_capacity (int): Maximum number of transitions retained in replay.
+            is_debug (bool): Enable additional discriminator/parameter diagnostics where implemented.
+            is_xla (bool): Compile the SAC graph with XLA.
+            is_absorbed_state (bool): Use DAC absorbing Bellman targets and omit synthetic loops from
+                actor losses.
+            critic_layer_norm (bool): Insert layer normalization in the SAC critics.
+            replay_mask_encoding (str or None): Replay convention used by the agent; None selects the
+                default for its absorbing mode.
+            **kwargs (dict): Additional keyword arguments forwarded to OffPolicyAgent construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(
             name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
         self._is_absorbed_state = is_absorbed_state
@@ -76,7 +106,18 @@ class SAC(OffPolicyAgent):
         self._init_static_graph(state_shape, action_dim)
 
     def _setup_actor(self, state_shape, action_dim, actor_units, lr, max_action=1.):
-        """Create the action policy and its optimizer."""
+        """Create the action policy and its optimizer.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            actor_units (sequence[int]): Widths of the actor hidden layers.
+            lr (float): Optimizer learning rate.
+            max_action (float): Symmetric continuous-action bound or output scale.
+
+        Returns:
+            None.
+        """
         std_dev = 1e-4 if self._is_pixels else 1e-3
         policy_func = GaussianActor_pixels if self._is_pixels else GaussianActor
         with tf.device(self.device):
@@ -87,7 +128,17 @@ class SAC(OffPolicyAgent):
             self.actor_optimizer.build(self.actor.trainable_variables)
 
     def _setup_critic_q(self, state_shape, action_dim, critic_units, lr):
-        """Create Q-value networks, initialize their targets, and configure optimization."""
+        """Create Q-value networks, initialize their targets, and configure optimization.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            critic_units (sequence[int]): Widths of the critic hidden layers.
+            lr (float): Optimizer learning rate.
+
+        Returns:
+            None.
+        """
         Q_func = CriticQ_pixels if self._is_pixels else CriticQ
         with tf.device(self.device):
             q_initializer = tf.keras.initializers.GlorotUniform()
@@ -108,7 +159,19 @@ class SAC(OffPolicyAgent):
             update_target_variables(self.qf2_target.weights, self.qf2.weights, tau=1.)
 
     def get_action(self, state, test=False):
-        """Return actions and their log probabilities; test mode selects deterministic actions."""
+        """Return actions and their log probabilities; test mode selects deterministic actions.
+
+        Args:
+            state (array_like): One observation shaped state_shape, or a batch shaped (batch,
+                *state_shape).
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple: Actions and log densities. A single observation returns a NumPy action vector and
+                scalar log density; a batched observation returns tensors shaped (batch, action_dim) and
+                (batch,).
+        """
         state = np.asarray(state, dtype=np.uint8 if self._is_pixels else np.float32)
         is_single_state = len(state.shape) == self.state_ndim
 
@@ -122,19 +185,49 @@ class SAC(OffPolicyAgent):
         return (action.numpy()[0], logps.numpy()[0]) if is_single_state else (action, logps)
 
     def get_action_tensor(self, states, test=False):
-        """Batched SAC inference for either CPU or CUDA vector environments."""
+        """Batched SAC inference for either CPU or CUDA vector environments.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Actions shaped (batch, action_dim) and log densities shaped
+                (batch,), on the agent device.
+        """
         with tf.device(self.device):
             return self._get_action_body_graph(
                 tf.cast(tf.convert_to_tensor(states), tf.uint8 if self._is_pixels else tf.float32),
                 tf.constant(test))
 
     def compute_action_log_probs(self, states, actions):
-        """Density of the supplied actions, used by AIRL-compatible expert exports."""
+        """Density of the supplied actions, used by AIRL-compatible expert exports.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+
+        Returns:
+            tf.Tensor: Supplied-action log densities of shape (batch,) in the actor normalized-action
+                convention; the constant max_action Jacobian is omitted.
+        """
         with tf.device(self.device):
             return self.actor.compute_log_probs(states, actions)
 
     def _get_action_body(self, state, test):
-        """Return batched policy actions and log probabilities on the configured device."""
+        """Return batched policy actions and log probabilities on the configured device.
+
+        Args:
+            state (tf.Tensor): Observation batch shaped (batch, *state_shape); callers must add a batch
+                axis to individual observations.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Batched continuous actions and their log densities.
+        """
         print("[DEBUG] initializing {_get_action_body SAC}...")
         with tf.device(self.device):
             actions, log_pis = self.actor(state, training=False, test=test)
@@ -147,6 +240,26 @@ class SAC(OffPolicyAgent):
         ``compute_td_error`` for residuals. Rewards and flags may be ``(B,)`` or ``(B,1)``.
         With absorbing states enabled, ``dones`` contains DAC masks (1, 0, -1).
         Non-unit importance weights are unsupported by this research objective.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+            weights (array_like or None): Optional importance weights; only None or all-one weights are
+                supported by this uniform-replay objective.
+
+        Returns:
+            tf.Tensor: Bellman targets y of shape (batch,), retained as the historical update
+                diagnostic. This is not a TD residual.
+
+        Raises:
+            NotImplementedError: SAC does not implement importance-weighted losses.
         """
         if weights is not None and not np.allclose(weights, 1):
             raise NotImplementedError("SAC does not implement importance-weighted losses")
@@ -173,7 +286,24 @@ class SAC(OffPolicyAgent):
         return td_errors
 
     def _train_body(self, states, actions, next_states, rewards, dones):#, weights):
-        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """Apply actor and critic gradient updates, update target networks, and return
+        diagnostics.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+
+        Returns:
+            tuple[tf.Tensor, ...]: Bellman targets, actor loss, current Q1 values, Q1 loss, and
+                minimum/maximum/mean sampled log densities. Networks, targets, and optional entropy
+                temperature are updated in place.
         """
         print("[DEBUG] initializing {_train_body SAC}")
         with tf.device(self.device):
@@ -225,7 +355,23 @@ class SAC(OffPolicyAgent):
             logp)
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
-        """Return temporal-difference errors for the supplied transition batch."""
+        """Return temporal-difference errors for the supplied transition batch.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+
+        Returns:
+            np.ndarray: Signed target-minus-Q1 residuals shaped (batch,), evaluated without applying
+                gradients.
+        """
         with tf.device(self.device):
             states, actions, next_states, rewards, dones = self._batch_tensors(
                 states, actions, next_states, rewards, dones)
@@ -235,7 +381,23 @@ class SAC(OffPolicyAgent):
         return td_errors.numpy()
 
     def _batch_tensors(self, states, actions, next_states, rewards, dones):
-        """Normalize both RL and imitation batches to the shared graph signatures."""
+        """Normalize both RL and imitation batches to the shared graph signatures.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+
+        Returns:
+            tuple[tf.Tensor, ...]: Aligned (states, actions, next_states, rewards, dones), with float32
+                actions and (batch, 1) rewards/flags; image observations remain uint8.
+        """
         state_dtype = tf.uint8 if self._is_pixels else tf.float32
         return (
             tf.cast(tf.convert_to_tensor(states), state_dtype),
@@ -246,14 +408,42 @@ class SAC(OffPolicyAgent):
         )
 
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
-        """Compute batched temporal-difference errors using the target networks."""
+        """Compute batched temporal-difference errors using the target networks.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+
+        Returns:
+            tf.Tensor: Flat signed target-minus-Q1 residuals, one per replay row.
+        """
         print("[DEBUG] initializing {_compute_td_error_body}...")
         with tf.device(self.device):
             target = self._target(next_states, rewards, dones)
             return target - self.qf1(states, actions, training=False)
 
     def _target(self, next_states, rewards, dones):
-        """Share target construction between critic training and TD diagnostics."""
+        """Share target construction between critic training and TD diagnostics.
+
+        Args:
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+
+        Returns:
+            tf.Tensor: Stop-gradient Bellman targets shaped (batch,), using the configured replay and
+                absorbing-state semantics.
+        """
         actions_next, logp = self.actor(next_states, training=False)
         actions_next = self._replay.next_actions(actions_next, dones)
         q_next = tf.minimum(self.qf1_target(next_states, actions_next, training=False),
@@ -262,7 +452,18 @@ class SAC(OffPolicyAgent):
             rewards, q_next, dones, self.discount, entropy=self.alpha * logp))
 
     def get_logp(self, state, actions=None):
-        """Evaluate supplied actions, or retain the historical fresh-action sample."""
+        """Evaluate supplied actions, or retain the historical fresh-action sample.
+
+        Args:
+            state (array_like): One observation shaped state_shape, or a batch shaped (batch,
+                *state_shape).
+            actions (array_like or None): Actions matching the state input, shaped (action_dim,) or
+                (batch, action_dim). None samples fresh policy actions whose log densities are returned.
+
+        Returns:
+            np.ndarray or numpy scalar: Supplied-action log densities, or fresh sampled-action log
+                densities when actions is None; scalar for one state and (batch,) for a batch.
+        """
         state = np.asarray(state, dtype=np.uint8 if self._is_pixels else np.float32)
         is_single_state = len(state.shape) == self.state_ndim
 
@@ -279,13 +480,30 @@ class SAC(OffPolicyAgent):
         return logp.numpy()[0] if is_single_state else logp.numpy()
 
     def _get_logp_body(self, state):
-        """Evaluate action log probabilities on the configured TensorFlow device."""
+        """Evaluate action log probabilities on the configured TensorFlow device.
+
+        Args:
+            state (tf.Tensor): Observation batch shaped (batch, *state_shape); callers must add a batch
+                axis to individual observations.
+
+        Returns:
+            tf.Tensor: Fresh sampled-action log densities of shape (batch,); the sampled actions are
+                discarded.
+        """
         with tf.device(self.device):
             logp = self.actor(state, training=False)[1]
         return logp
 
     def _init_static_graph(self, state_shape, action_dim):
-        """Set up TensorFlow signatures and traced model, training, or inference computations."""
+        """Set up TensorFlow signatures and traced model, training, or inference computations.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+
+        Returns:
+            None.
+        """
         if self._is_pixels:
             state_spec = tuple([None]+list(state_shape))
             state_dtype = tf.uint8
@@ -323,7 +541,14 @@ class SAC(OffPolicyAgent):
 
     @staticmethod
     def get_argument(parser=None):
-        """Add this component's command-line options and return the argument parser."""
+        """Add this component's command-line options and return the argument parser.
+
+        Args:
+            parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+        Returns:
+            argparse.ArgumentParser: Parser extended with the supported component options.
+        """
         parser = OffPolicyAgent.get_argument(parser)
         parser.add_argument('--lr', type=float, default=3e-4, help=" <default: %(default)s>")
         parser.add_argument('--lr-alpha', type=float, default=3e-4, help=" <default: %(default)s>")

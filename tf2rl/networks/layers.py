@@ -18,7 +18,15 @@ class L1L2_EQL(regularizers.Regularizer):
     """
 
     def __init__(self, l1=0.0, l2=0.0):
-        """Initialize mutable L1 and L2 regularization coefficients."""
+        """Initialize mutable L1 and L2 regularization coefficients.
+
+        Args:
+            l1 (float): Coefficient multiplying the sum of absolute parameter values.
+            l2 (float): Coefficient multiplying the sum of squared parameter values.
+
+        Returns:
+            None: Initializes the instance.
+        """
         with K.name_scope(self.__class__.__name__):
             self.l1 = K.variable(l1, name='l1')
             self.l2 = K.variable(l2, name='l2')
@@ -26,14 +34,31 @@ class L1L2_EQL(regularizers.Regularizer):
             self.val_l2 = l2
 
     def set_l1_l2(self, l1, l2):
-        """Update the regularizer's L1 and L2 coefficients in place."""
+        """Update the regularizer's L1 and L2 coefficients in place.
+
+        Args:
+            l1 (float): Coefficient multiplying the sum of absolute parameter values.
+            l2 (float): Coefficient multiplying the sum of squared parameter values.
+
+        Returns:
+            None.
+        """
         K.set_value(self.l1, l1)
         K.set_value(self.l2, l2)
         self.val_l1 = l1
         self.val_l2 = l2
 
     def __call__(self, x):
-        """Return the weighted L1 and L2 penalties for the input tensor."""
+        """Return the weighted L1 and L2 penalties for the input tensor.
+
+        Args:
+            x (array_like): Input samples; leading dimensions index samples and the remaining dimensions
+                contain features.
+
+        Returns:
+            tf.Tensor or float: Scalar weighted L1/L2 penalty; the Python float zero is returned when
+                both coefficients are zero.
+        """
         regularization = 0.
         if not self.val_l1 == 0.:
             regularization += K.sum(self.l1 * K.abs(x))
@@ -42,7 +67,11 @@ class L1L2_EQL(regularizers.Regularizer):
         return regularization
 
     def get_config(self):
-        """Return the configuration needed to serialize this layer or regularizer."""
+        """Return the configuration needed to serialize this layer or regularizer.
+
+        Returns:
+            dict: Serializable l1 and l2 regularization coefficients.
+        """
         config = {'l1': float(K.get_value(self.l1)),
                   'l2': float(K.get_value(self.l2))}
         return config
@@ -51,7 +80,26 @@ class L1L2_EQL(regularizers.Regularizer):
 class DenseLayer(keras.layers.Layer):
     """Scalar dense output layer with configurable equation-network regularization."""
     def __init__(self, w_initializer, b_initializer, lmbda=0, constraint=None ,mask=None, activation = None, dynamic_lmbda=False):
-        """Configure the scalar output activation, initializers, constraints, and L1 regularizer."""
+        """Configure the scalar output activation, initializers, constraints, and L1
+        regularizer.
+
+        Args:
+            w_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                weights.
+            b_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                biases.
+            lmbda (float): L1 regularization coefficient for equation parameters.
+            constraint (callable or None): Keras weight constraint applied when parameters are updated.
+            mask (array_like or None): Mask selecting entries to update or retain; None leaves all
+                entries enabled. This implementation does not read this argument.
+            activation (str or callable or None): Output activation; None leaves the affine output
+                linear.
+            dynamic_lmbda (bool): Enable the historical mutable regularization-coefficient path where
+                supported.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super(DenseLayer, self).__init__()
         self._is_reg_dyn = dynamic_lmbda
         self.activation = activation
@@ -64,7 +112,15 @@ class DenseLayer(keras.layers.Layer):
         self.constraint=constraint
 
     def build(self, input_shape):
-        """Create layer weights and biases for the input feature dimension."""
+        """Create layer weights and biases for the input feature dimension.
+
+        Args:
+            input_shape (tuple[int, ...] or tf.TensorShape): Incoming tensor dimensions, including the
+                batch axis.
+
+        Returns:
+            None.
+        """
         self.w = self.add_weight(
             shape=(input_shape[-1], 1),
             initializer=self.w_initializer,
@@ -77,7 +133,22 @@ class DenseLayer(keras.layers.Layer):
         )
 
     def call(self, inputs, training, l1_regularizers, mask = None):
-        """Return the scalar affine output with its configured activation and regularization."""
+        """Return the scalar affine output with its configured activation and regularization.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it.
+            mask (array_like or None): Mask selecting entries to update or retain; None leaves all
+                entries enabled.
+
+        Returns:
+            tf.Tensor: Activated affine outputs shaped (batch, 1); configured losses are registered on
+                the layer.
+        """
         if training is None: tf.print("The training state of the layer needs to be set. [call DenseLayer]")
         if self._is_reg_dyn and training:
             print("[DEBUG] The regularizer is set to {} [call DenseLayer]".format(l1_regularizers))
@@ -123,7 +194,29 @@ class NoisyDense(tf.keras.layers.Layer):
             bias_constraint=None,
             trainable=True,
             **kwargs):
-        """Configure dense units, trainable noise scales, activation, and parameter initialization.
+        """Configure dense units, trainable noise scales, activation, and parameter
+        initialization.
+
+        Args:
+            units (int): Number of output units in the dense layer.
+            sigma_init (float): Initial scale of the trainable noisy-layer perturbations.
+            activation (str or callable or None): Output activation; None leaves the affine output
+                linear.
+            use_bias (bool): Include an additive bias in the dense transformation.
+            kernel_initializer (str or keras.initializers.Initializer): Initializer supplied for dense
+                kernels.
+            bias_initializer (str or keras.initializers.Initializer): Initializer for dense biases.
+            kernel_regularizer (callable or None): Regularizer applied to the dense kernel.
+            bias_regularizer (callable or None): Regularizer applied to dense biases.
+            activity_regularizer (callable or None): Regularizer applied to layer activations.
+            kernel_constraint (callable or None): Constraint applied to dense kernels after updates.
+            bias_constraint (callable or None): Constraint applied to dense biases after updates.
+            trainable (bool): Whether Keras should include this layer parameters in optimization.
+            **kwargs (dict): Additional keyword arguments forwarded to tf.keras.layers.Layer
+                construction.
+
+        Returns:
+            None: Initializes the instance.
         """
         if 'input_shape' not in kwargs and 'input_dim' in kwargs:
             kwargs['input_shape'] = (kwargs.pop('input_dim'),)
@@ -143,7 +236,15 @@ class NoisyDense(tf.keras.layers.Layer):
         self.trainable = trainable
 
     def build(self, input_shape):
-        """Create dense weights, biases, and their trainable noise scales for the input shape."""
+        """Create dense weights, biases, and their trainable noise scales for the input shape.
+
+        Args:
+            input_shape (tuple[int, ...] or tf.TensorShape): Incoming tensor dimensions, including the
+                batch axis.
+
+        Returns:
+            None.
+        """
         assert len(input_shape) >= 2
         self.input_dim = input_shape[-1]
         self.kernel_shape = tf.constant((self.input_dim, self.units))
@@ -188,7 +289,16 @@ class NoisyDense(tf.keras.layers.Layer):
 
     def call(self, inputs):
         # Implement Eq.(9)
-        """Return dense activations using freshly sampled uniform parameter noise."""
+        """Return dense activations using freshly sampled uniform parameter noise.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+
+        Returns:
+            tf.Tensor: Dense outputs with newly sampled trainable Gaussian weight/bias perturbations,
+                shaped (batch, units).
+        """
         perturbed_kernel = (self.kernel
                             + self.sigma_kernel
                             * tf.random.uniform(shape=self.kernel_shape))
@@ -203,7 +313,15 @@ class NoisyDense(tf.keras.layers.Layer):
         return outputs
 
     def compute_output_shape(self, input_shape):
-        """Return the output batch shape with the configured number of units."""
+        """Return the output batch shape with the configured number of units.
+
+        Args:
+            input_shape (tuple[int, ...] or tf.TensorShape): Incoming tensor dimensions, including the
+                batch axis.
+
+        Returns:
+            tuple: Output shape (input_shape[0], units).
+        """
         return (input_shape[0], self.units)
 
 
@@ -214,7 +332,19 @@ import tensorflow as tf
 class SNDense(tf.keras.layers.Dense):
     """Dense layer using a power-iteration estimate to spectrally normalize its kernel."""
     def __init__(self, units, trainable=True, u_kernel_initializer=None, **kwargs):
-        """Configure the dense layer and initializer for its power-iteration vector."""
+        """Configure the dense layer and initializer for its power-iteration vector.
+
+        Args:
+            units (int): Number of output units in the dense layer.
+            trainable (bool): Whether Keras should include this layer parameters in optimization.
+            u_kernel_initializer (keras.initializers.Initializer or None): Initializer for the spectral-
+                normalization power-iteration vector.
+            **kwargs (dict): Additional keyword arguments forwarded to tf.keras.layers.Dense
+                construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(units, trainable=trainable, **kwargs)
         if u_kernel_initializer is None:
             u_kernel_initializer = tf.keras.initializers.TruncatedNormal()
@@ -223,15 +353,35 @@ class SNDense(tf.keras.layers.Dense):
         self.u_kernel_initializer = tf.keras.initializers.get(u_kernel_initializer)
 
     def build(self, input_shape):
-        """Build the dense parameters and create the spectral-norm estimation vector."""
+        """Build the dense parameters and create the spectral-norm estimation vector.
+
+        Args:
+            input_shape (tuple[int, ...] or tf.TensorShape): Incoming tensor dimensions, including the
+                batch axis.
+
+        Returns:
+            None.
+        """
         super().build(input_shape)
         self.u_kernel = self.add_weight(name='u_kernel', shape=(1, self.units),
                                         initializer=self.u_kernel_initializer, trainable=False)
 
     def compute_spectral_norm(self):
-        """Return the kernel divided by its estimated largest singular value."""
+        """Return the kernel divided by its estimated largest singular value.
+
+        Returns:
+            tf.Tensor: Kernel divided by its estimated largest singular value; the persistent power-
+                iteration vector is updated in place.
+        """
         def normalize(value):
-            """Return a unit-length vector with a small stabilizer in the denominator."""
+            """Return a unit-length vector with a small stabilizer in the denominator.
+
+            Args:
+                value (tf.Tensor): Power-iteration vector to divide by its stabilized Euclidean norm.
+
+            Returns:
+                tf.Tensor: Input divided by its stabilized Euclidean norm, preserving shape.
+            """
             return value / (tf.sqrt(tf.reduce_sum(tf.square(value))) + 1e-12)
         v = normalize(tf.matmul(self.u_kernel, self.kernel, transpose_b=True))
         u = normalize(tf.matmul(v, self.kernel))
@@ -240,7 +390,16 @@ class SNDense(tf.keras.layers.Dense):
         return self.kernel / sigma
 
     def call(self, inputs):
-        """Apply the spectrally normalized kernel, bias, and activation."""
+        """Apply the spectrally normalized kernel, bias, and activation.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+
+        Returns:
+            tf.Tensor: Activated dense output using the spectrally normalized kernel, shaped (batch,
+                units).
+        """
         weights = self.compute_spectral_norm()
         if isinstance(inputs, tf.SparseTensor):
             output = tf.sparse.sparse_dense_matmul(inputs, weights)
@@ -251,7 +410,11 @@ class SNDense(tf.keras.layers.Dense):
         return self.activation(output) if self.activation is not None else output
 
     def get_config(self):
-        """Return the configuration needed to serialize this layer or regularizer."""
+        """Return the configuration needed to serialize this layer or regularizer.
+
+        Returns:
+            dict: Base dense configuration extended with spectral-normalization initializer settings.
+        """
         config = super().get_config()
         config['u_kernel_initializer'] = tf.keras.initializers.serialize(self.u_kernel_initializer)
         return config

@@ -7,7 +7,18 @@ from tf2rl.envs.spaces import is_discrete
 
 
 def get_space_size(space):
-    """Return the replay-field shape for a Box or Discrete space; reject other space types."""
+    """Return the replay-field shape for a Box or Discrete space; reject other space types.
+
+    Args:
+        space (gym.Space): Observation or action space whose storage shape is required.
+
+    Returns:
+        tuple[int, ...] or list[int]: Box shape, or [1] for a discrete scalar stored in replay.
+
+    Raises:
+        NotImplementedError: This interface must be implemented by a subclass or is unsupported by
+            this historical variant.
+    """
     if isinstance(space, Box):
         return space.shape
     elif isinstance(space, Discrete):
@@ -17,7 +28,17 @@ def get_space_size(space):
 
 
 def get_default_rb_dict(size, env):
-    """Return the standard replay-buffer schema for the environment and capacity."""
+    """Return the standard replay-buffer schema for the environment and capacity.
+
+    Args:
+        size (int or None): Replay capacity; None selects the agent capacity or this helper default.
+        env (gym.Env or object): Environment or space container exposing observation_space and
+            action_space.
+
+    Returns:
+        dict: cpprb constructor options containing capacity, float32 defaults, and
+            obs/act/next_obs/rew/done schemas.
+    """
     return {
         "size": size,
         "default_dtype": np.float32,
@@ -43,6 +64,24 @@ def get_replay_buffer(
 ):
     """Create replay storage for the policy, with optional log densities, prioritization, and n-step
     returns.
+
+    Args:
+        policy (Policy): Agent supplying action selection and learning operations.
+        env (gym.Env or object or None): Environment or space container exposing observation_space
+            and action_space; None disables buffer construction.
+        irl (RewardLearner or None): Learned reward/discriminator component; its requirements
+            determine whether action densities are needed.
+        save_logp (bool): Allocate a replay field for collection-time action log probabilities.
+        use_prioritized_rb (bool): Construct prioritized replay with sampling weights and updateable
+            priorities.
+        use_nstep_rb (bool): Aggregate N-step rewards and successor observations in replay.
+        n_step (int): Number of transitions aggregated in each N-step replay entry.
+        size (int or None): Replay capacity; None selects the agent capacity or this helper default.
+
+    Returns:
+        cpprb.ReplayBuffer or cpprb.PrioritizedReplayBuffer or None: Buffer configured for the
+            agent, optional log densities, priorities, or N-step storage. None if policy or env is
+            absent.
     """
     if policy is None or env is None:
         return None
@@ -99,7 +138,18 @@ def get_replay_buffer(
 
 
 def get_replay_buffer_no_policy(env, save_logp=True, size=None):
-    """Create environment-shaped replay storage without requiring a policy instance."""
+    """Create environment-shaped replay storage without requiring a policy instance.
+
+    Args:
+        env (gym.Env or object or None): Environment or space container exposing observation_space
+            and action_space; None disables buffer construction.
+        save_logp (bool): Allocate a replay field for collection-time action log probabilities.
+        size (int or None): Replay capacity; None selects the agent capacity or this helper default.
+
+    Returns:
+        cpprb.ReplayBuffer or None: Basic transition buffer with optional logp storage; None if env
+            is absent.
+    """
     if env is None:
         return None
 

@@ -7,12 +7,28 @@ class DMCWrapper(FrameStack):
     Wrapper class to visualize DMC environments.
     """
     def __init__(self, env, k, obs_shape, wait_ms=1000 / 30, **kwargs):
-        """Configure frame stacking and the OpenCV viewer delay in milliseconds."""
+        """Configure frame stacking and the OpenCV viewer delay in milliseconds.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            k (int): Number of consecutive frames stored in the observation stack.
+            obs_shape (tuple[int, ...]): Shape of one observation or image, excluding the batch axis.
+            wait_ms (float): OpenCV viewer delay in milliseconds, converted to an integer.
+            **kwargs (dict): Additional keyword arguments forwarded to FrameStack construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(env, k, obs_shape, **kwargs)
         self._wait_ms = int(wait_ms)
 
     def render(self):
-        """Display the rendered frame in OpenCV and wait for the configured viewer delay."""
+        """Display the rendered frame in OpenCV and wait for the configured viewer delay.
+
+        Returns:
+            None.
+        """
         rgb_array = self.env.render(mode="rgb_array")
         cv2.imshow("DMC Visualizer", cv2.cvtColor(rgb_array, cv2.COLOR_BGR2RGB))
         cv2.waitKey(self._wait_ms)

@@ -9,7 +9,19 @@ from pathlib import Path
 def initialize_logger(
     logging_level=logging.INFO, output_dir="results/", filename=None, save_log=True
 ):
-    """Configure the tf2rl logger with console output and optional file logging."""
+    """Configure the tf2rl logger with console output and optional file logging.
+
+    Args:
+        logging_level (int): Python logging severity used for the tf2rl logger.
+        output_dir (str or Path or None): Directory receiving metrics, trajectories, or rendered
+            artifacts.
+        filename (str or Path or None): Log filename; None creates a timestamped .log file under
+            output_dir when save_log is enabled.
+        save_log (bool): Write log messages to a file as well as the console.
+
+    Returns:
+        logging.Logger: Configured tf2rl logger with console and optional file handlers.
+    """
     logger = getLogger("tf2rl")
     logger.setLevel(logging_level)
 
@@ -84,10 +96,15 @@ import numpy as np
 
 
 def is_return_code_zero(args):
-    """
-    Return true if the given command's return code is zero.
+    """Return true if the given command's return code is zero.
     All the messages to stdout or stderr are suppressed.
     forked from https://github.com/chainer/chainerrl/blob/master/chainerrl/misc/is_return_code_zero.py
+
+    Args:
+        args (sequence[str]): Command and argument tokens passed to the subprocess without a shell.
+
+    Returns:
+        bool: True if the subprocess exits successfully; False for a failed or unavailable command.
     """
     with open(os.devnull, "wb") as FNULL:
         try:
@@ -102,8 +119,10 @@ def is_return_code_zero(args):
 
 
 def is_under_git_control():
-    """
-    Return true iff the current directory is under git control.
+    """Return true iff the current directory is under git control.
+
+    Returns:
+        bool: Whether git rev-parse succeeds in the current working directory.
     """
     return is_return_code_zero(["git", "rev-parse"])
 
@@ -111,8 +130,7 @@ def is_under_git_control():
 def prepare_output_dir(
     args, user_specified_dir=None, argv=None, time_format="%Y%m%dT%H%M%S.%f", suffix=""
 ):
-    """
-    Prepare a directory for outputting training results.
+    """Prepare a directory for outputting training results.
     An output directory, which ends with the current datetime string,
     is created. Then the following infomation is saved into the directory:
         args.txt: command line arguments
@@ -125,15 +143,19 @@ def prepare_output_dir(
         git-log.txt: result of `git log`
         git-diff.txt: result of `git diff`
 
-    :param args (dict or argparse.Namespace): Arguments to save
-    :param user_specified_dir (str or None): If str is specified, the output
-        directory is created under that path. If not specified, it is
-        created as a new temporary directory instead.
-    :param argv (list or None): The list of command line arguments passed to a
-        script. If not specified, sys.argv is used instead.
-    :param time_format (str): Format used to represent the current datetime. The
-    :param default format is the basic format of ISO 8601.
-    :return: Path of the output directory created by this function (str).
+    Args:
+        args (argparse.Namespace or dict): Experiment options to record or use when building the run
+            tag.
+        user_specified_dir (str or Path or None): Parent directory for the timestamped run; None
+            creates a temporary run directory under results/.
+        argv (sequence[str] or None): Historical command-line override, currently unused;
+            command.txt records sys.argv.
+        time_format (str): strftime format used for the run-directory timestamp.
+        suffix (str): Suffix appended to the generated run directory name.
+
+    Returns:
+        str: Newly created output directory containing argument, command, environment, and available
+            Git provenance files.
     """
     if suffix != "":
         suffix = "_" + suffix
@@ -196,7 +218,21 @@ def prepare_output_dir(
 
 
 def prep_log_tag(args, *kwargs):
-    """Construct the historical run-directory tag from experiment settings."""
+    """Construct the historical run-directory tag from experiment settings.
+
+    Args:
+        args (argparse.Namespace or dict): Experiment options to record or use when building the run
+            tag.
+        *kwargs (tuple): Four or five legacy tag components, including the algorithm name,
+            layer/operator widths, and optional suffix.
+
+    Returns:
+        str: Slash-prefixed run tag assembled from experiment options and additional fragments.
+
+    Raises:
+        NotImplementedError: The requested operation or argument combination is unsupported by this
+            component. dump in prep_log_tag.
+    """
     if len(kwargs) == 4 or len(kwargs) == 5:
         ret = kwargs[0]
         ret += "-v" if "eql" in kwargs[0] else "-u"
@@ -298,7 +334,16 @@ def prep_log_tag(args, *kwargs):
 
 
 def save_run_config(args):
-    """Save the effective launcher options alongside vector-training artifacts."""
+    """Save the effective launcher options alongside vector-training artifacts.
+
+    Args:
+        args (argparse.Namespace or dict): Experiment options to record or use when building the run
+            tag.
+
+    Returns:
+        dict: JSON-serializable run configuration also written to run_config.json in the output
+            directory.
+    """
     args.output.mkdir(parents=True, exist_ok=True)
     config = {
         key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()

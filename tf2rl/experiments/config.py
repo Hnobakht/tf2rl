@@ -12,7 +12,15 @@ class ConfigurationError(ValueError):
 
 
 def off_policy_parser(algorithm=None):
-    """Build the compatible CLI without starting an experiment."""
+    """Build the compatible CLI without starting an experiment.
+
+    Args:
+        algorithm (str or None): Algorithm identifier or default selection for the experiment
+            recipe.
+
+    Returns:
+        argparse.ArgumentParser: Parser with the corresponding experiment or trainer options added.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--algorithm", choices=("sac", "td3", "ddpg"), default=algorithm or "sac")
     parser.add_argument("--env-name", required=True)
@@ -87,6 +95,21 @@ def off_policy_parser(algorithm=None):
 
 
 def validate_off_policy(args):
+    """Normalize and validate off policy options before constructing environments or models.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+    Returns:
+        argparse.Namespace: Validated argument object, with any normalized/defaulted fields written
+            back in place.
+
+    Raises:
+        ConfigurationError: Counts must be positive. Warmup and evaluation counts must be
+            nonnegative. updates-per-transition must be finite and nonnegative. memory-capacity must
+            be at least batch-size. --xla currently supports SAC. --evaluate requires --model-dir.
+            --gpu must name a visible GPU or be -1 for CPU. MJWarp requires a visible --env-gpu.
+    """
     import tensorflow as tf
 
     if (
@@ -126,7 +149,15 @@ def validate_off_policy(args):
 
 
 def on_policy_parser(algorithm=None):
-    """Build the compatible CLI without starting an experiment."""
+    """Build the compatible CLI without starting an experiment.
+
+    Args:
+        algorithm (str or None): Algorithm identifier or default selection for the experiment
+            recipe.
+
+    Returns:
+        argparse.ArgumentParser: Parser with the corresponding experiment or trainer options added.
+    """
     from tf2rl.experiments.build import _ALGORITHMS
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -173,6 +204,23 @@ def on_policy_parser(algorithm=None):
 
 
 def validate_on_policy(args):
+    """Normalize and validate on policy options before constructing environments or models.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+    Returns:
+        argparse.Namespace: Validated argument object, with any normalized/defaulted fields written
+            back in place.
+
+    Raises:
+        ConfigurationError: --policy-kwargs must be a JSON object. --target-kl is a PPO option; use
+            --policy-kwargs for other algorithms. Counts must be positive. Evaluation and warmup
+            counts must be nonnegative. cpu-threads and checkpoint-interval must be positive.
+            --units requires two positive hidden widths. num-envs * rollout-steps must be divisible
+            by batch-size. Select a visible --gpu for GPU policy training, or -1 for CPU. Select a
+            visible --env-gpu for MJWarp simulation.
+    """
     import tensorflow as tf
 
     from tf2rl.experiments.build import _ALGORITHMS
@@ -209,7 +257,15 @@ def validate_on_policy(args):
 
 
 def imitation_parser(algorithm=None):
-    """Build the compatible imitation/expert CLI without starting training."""
+    """Build the compatible imitation/expert CLI without starting training.
+
+    Args:
+        algorithm (str or None): Algorithm identifier or default selection for the experiment
+            recipe.
+
+    Returns:
+        argparse.ArgumentParser: Parser with the corresponding experiment or trainer options added.
+    """
     from tf2rl.algos.imitation.airl import AIRL
     from tf2rl.algos.imitation.gail_eqn import equation_arguments
     from tf2rl.algos.rl.sac import SAC
@@ -243,6 +299,21 @@ def imitation_parser(algorithm=None):
 
 
 def validate_imitation(args):
+    """Normalize and validate imitation options before constructing environments or models.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+    Returns:
+        argparse.Namespace: Validated argument object, with any normalized/defaulted fields written
+            back in place.
+
+    Raises:
+        ConfigurationError: Pixel training and reward plotting remain separate experimental
+            interfaces. --reward-dir requires an explicitly constructed external-reward wrapper; see
+            docs/history/modernization.md. --debug requires eager execution and cannot be combined
+            with --xla. Equation sparsity/export options require eqn-gail or eqn-airl.
+    """
     if args.units_ail is None:
         args.units_ail = "64,64" if args.algorithm == "eqn-airl" else "128,128"
     if args.pixels or args.draw_reward_function:
@@ -265,7 +336,14 @@ def validate_imitation(args):
 
 
 def add_trainer_arguments(parser=None):
-    """Add this component's command-line options and return the argument parser."""
+    """Add this component's command-line options and return the argument parser.
+
+    Args:
+        parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+    Returns:
+        argparse.ArgumentParser: Parser with the corresponding experiment or trainer options added.
+    """
     if parser is None:
         parser = argparse.ArgumentParser(conflict_handler="resolve")
     # experiment settings

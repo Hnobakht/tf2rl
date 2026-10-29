@@ -12,7 +12,11 @@ from pathlib import Path
 
 
 def main():
-    """Run the configured training and validation pipeline."""
+    """Run the configured training and validation pipeline.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--steps', type=int, default=20000)
     parser.add_argument('--warmup', type=int, default=1000)

@@ -8,6 +8,11 @@ from pathlib import Path
 
 
 def main():
+    """Benchmark environment backend reset/step throughput with the requested CLI settings.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-name", required=True)
     parser.add_argument("--algorithm", choices=("ppo", "vpg"), default="ppo")

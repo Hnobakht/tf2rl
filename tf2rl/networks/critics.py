@@ -8,7 +8,22 @@ class CriticQ(tf.keras.Model):
     """Neural action-value function over state-action pairs."""
     def __init__(self, state_shape, action_dim, critic_units=(256, 256), name='qf',
                  initializer=None, layer_norm=True):
-        """Build the hidden state-action layers and scalar Q-value head."""
+        """Build the hidden state-action layers and scalar Q-value head.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector. This
+                implementation does not read this argument.
+            critic_units (sequence[int]): Widths of the critic hidden layers.
+            name (str): Name assigned to the model, operation, or registered component.
+            initializer (str or keras.initializers.Initializer or None): Initializer used to create
+                network kernels.
+            layer_norm (bool): Use layer normalization in hidden critic layers.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
         initializer = initializer or tf.keras.initializers.GlorotUniform()
 
@@ -23,7 +38,18 @@ class CriticQ(tf.keras.Model):
 
 
     def call(self, states, actions, training=None):
-        """Return Q-value estimates for a batch of state-action pairs."""
+        """Return Q-value estimates for a batch of state-action pairs.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default. This implementation does not read this argument.
+
+        Returns:
+            tf.Tensor: State-action Q estimates shaped (batch,).
+        """
         features = tf.concat((states, actions), axis=1)
         for cur_layer in self.base_layers:
             features = cur_layer(features)
@@ -35,7 +61,23 @@ class CriticQ_pixels(tf.keras.Model):
     """Action-value function using convolutional features from pixel observations."""
     def __init__(self, state_shape, action_dim, critic_units=None, name='qf',
                  initializer=None, layer_norm=True):
-        """Build the image encoder and state-action Q-value layers."""
+        """Build the image encoder and state-action Q-value layers.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector. This
+                implementation does not read this argument.
+            critic_units (sequence[int] or None): Widths of the critic hidden layers. This
+                implementation does not read this argument.
+            name (str): Name assigned to the model, operation, or registered component.
+            initializer (str or keras.initializers.Initializer or None): Initializer used to create
+                network kernels.
+            layer_norm (bool): Use layer normalization in hidden critic layers.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
         initializer = initializer or tf.keras.initializers.GlorotUniform()
 
@@ -57,7 +99,18 @@ class CriticQ_pixels(tf.keras.Model):
         self.out_layer = Dense(1, name="Q", activation='linear', kernel_initializer=initializer)
 
     def call(self, states, actions, training=None):
-        """Return Q-value estimates for a batch of state-action pairs."""
+        """Return Q-value estimates for a batch of state-action pairs.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+
+        Returns:
+            tf.Tensor: State-action Q estimates shaped (batch,).
+        """
         features_cnn = tf.cast(states/255, dtype=tf.float32)
         print("[DEBUG] input: " + str(states.shape) + " [call CriticQ_pixels]")
         for cnn_layer in self.cnn_layers:
@@ -76,7 +129,18 @@ class CriticV(tf.keras.Model):
     """Neural state-value function for policy-gradient agents."""
     def __init__(self, state_shape, units, name='critic_v', hidden_activation='relu',
                  device='/cpu:0'):
-        """Build the hidden state layers and scalar value head."""
+        """Build the hidden state layers and scalar value head.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            name (str): Name assigned to the model, operation, or registered component.
+            hidden_activation (str or callable): Activation used by hidden layers.
+            device (str): TensorFlow or Warp device identifier appropriate to this operation.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         self.l1 = Dense(units[0], name="L1", activation=hidden_activation)
@@ -88,7 +152,14 @@ class CriticV(tf.keras.Model):
                 np.zeros(shape=(1,)+state_shape, dtype=np.float32)))
 
     def call(self, inputs):
-        """Return a scalar state-value estimate for each observation."""
+        """Return a scalar state-value estimate for each observation.
+
+        Args:
+            inputs (tf.Tensor): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: State-value estimates shaped (batch,).
+        """
         features = self.l1(inputs)
         features = self.l2(features)
         values = self.l3(features)

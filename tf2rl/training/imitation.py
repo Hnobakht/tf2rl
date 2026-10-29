@@ -29,7 +29,47 @@ class ImitationTrainer(OffPolicyTrainer):
         random_epoch=0,
         expert_logp=None,
     ):
-        """Configure training, replay storage, evaluation, and checkpoint handling."""
+        """Configure training, replay storage, evaluation, and checkpoint handling.
+
+        Args:
+            policy (Policy): Agent supplying action selection and learning operations.
+            env (gym.Env): Scalar training environment with the observation and replay conventions
+                selected for the generator.
+            args (argparse.Namespace): Parsed experiment options used to configure this operation.
+            irl (RewardLearner or None): Learned reward/discriminator component; its requirements
+                determine whether action densities are needed.
+            expert_obs (array_like): Expert observations shaped (expert_transitions,
+                *observation_shape).
+            expert_next_obs (array_like): Expert successor observations aligned with expert_obs.
+            expert_act (array_like): Expert actions aligned with expert_obs.
+            test_env (gym.Env or None): Independent evaluation environment; must differ from the
+                training instance.
+            is_perb_rew (bool): Historical perturbed-reward option; unsupported by the active imitation
+                trainer.
+            is_episodic (bool): Historical trainer flag enabling DAC absorbing-state collection.
+            is_short_memory (bool): Historical short-memory option; unsupported by the active imitation
+                trainer.
+            discriminator_noise (float): Fraction of expert minibatch entries substituted with agent
+                replay samples.
+            random_epoch (int): Warmup-replay substitution period in episode-horizon units; zero
+                disables substitution.
+            expert_logp (array_like or None): Stored expert action log densities required by AIRL.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            ValueError: ImitationTrainer currently uses a single Gymnasium environment. Collector
+                absorbing mode must match the policy's target mode. Absorbing-state training requires
+                DAC replay masks. AIRL requires a generator that supplies action log probabilities.
+                random_epoch must be nonnegative. DAC observation normalization needs an explicit
+                expert/indicator transform. Expert and environment observation shapes must match. Expert
+                and environment action shapes must match. AIRL requires stored expert log probabilities.
+                Epoch penalty requires a nonempty warmup replay.
+            NotImplementedError: Perturbed rewards and short-memory modes were never implemented. DAC
+                uses uniform one-step replay; prioritized/N-step masks need a new objective.
+            TypeError: The DAC trainer requires an off-policy generator.
+        """
         if hasattr(env, "num_envs"):
             raise ValueError("ImitationTrainer currently uses a single Gymnasium environment")
         self._irl = irl
@@ -86,7 +126,23 @@ class ImitationTrainer(OffPolicyTrainer):
         )
 
     def _get_train_kwargs(self, samples, noise=None, itr=1):
-        """Assemble the expert and agent minibatches needed by the IRL update."""
+        """Assemble the expert and agent minibatches needed by the IRL update.
+
+        AIRL receives stored collection-time log densities. During random warmup these may
+        describe a freshly sampled policy action rather than the uniform action executed in the
+        environment.
+
+        Args:
+            samples (dict[str, np.ndarray]): Aligned trajectory or replay fields.
+            noise (float or None): Historical argument retained for compatibility; currently unused.
+                Mixing uses discriminator_noise from construction.
+            itr (int): Training iteration/environment-step counter used by discriminator update-delay
+                logic.
+
+        Returns:
+            dict: Aligned agent/expert arguments for irl.train, including stored action log densities
+                for learners that require them.
+        """
         random_replay = (
             self.random_replay_buffer
             if self._random_epoch and itr % (self._random_epoch * self._episode_max_steps) == 0
@@ -110,18 +166,47 @@ class ImitationTrainer(OffPolicyTrainer):
         return kwargs
 
     def _prepare_single(self):
+        """Initialize scalar replay/collection and optional warmup replay for expert
+        substitution.
+
+        Returns:
+            None.
+        """
         self.replay_buffer = get_replay_buffer(self._policy, self._env, irl=self._irl)
         self.random_replay_buffer = get_replay_buffer(
             self._policy, self._env, irl=self._irl, size=max(1, self._policy.n_warmup)
         )
 
     def _store_single(self, rows, step):
+        """Store physical/synthetic transitions in ordinary replay and eligible warmup replay.
+
+        Args:
+            rows (sequence[dict]): Physical replay rows and any synthetic absorbing self-loops to
+                insert.
+            step (int or None): Physical environment-step counter used for warmup, summaries, or
+                checkpoint numbering.
+
+        Returns:
+            None.
+        """
         super()._store_single(rows, step)
         # Historical epoch-penalty replay excludes the final warmup step and synthetic loops.
         if step < self._policy.n_warmup:
             self.random_replay_buffer.add(**rows[0])
 
     def update(self, step=None, record_summaries=False):
+        """Relabel sampled rewards, update the generator, then train the discriminator on
+        matched agent/expert batches.
+
+        Args:
+            step (int or None): Physical environment-step counter used by summary scheduling and
+                discriminator update delays.
+            record_summaries (bool): Compatibility argument, unused; summaries follow step modulo
+                save_summary_interval.
+
+        Returns:
+            None.
+        """
         samples = self.replay_buffer.sample(self._policy.batch_size)
         apply_atol = (
             getattr(self._irl, "atol_starting_step", None) is not None
@@ -148,18 +233,42 @@ class ImitationTrainer(OffPolicyTrainer):
                 self._irl.train(**self._get_train_kwargs(samples, itr=step))
 
     def save(self, step=None):
+        """Save generator and discriminator checkpoints and export the active equation reward
+        when available.
+
+        Args:
+            step (int or None): Physical environment-step counter used for warmup, summaries, or
+                checkpoint numbering.
+
+        Returns:
+            None.
+        """
         super().save(step)
         self.checkpoint_manager_irl.save()
         self._export_equation(step)
 
     def _finish_single(self):
+        """Save the final non-aligned discriminator checkpoint and export the last equation
+        model.
+
+        Returns:
+            None.
+        """
         if self._max_steps % self._save_model_interval:
             self.checkpoint_manager.save()
             self.checkpoint_manager_irl.save()
         self._export_equation(self._max_steps)
 
     def _export_equation(self, step):
-        """Save the current inference equation when equation export is enabled."""
+        """Save the current inference equation when equation export is enabled.
+
+        Args:
+            step (int or None): Physical environment-step counter used for warmup, summaries, or
+                checkpoint numbering.
+
+        Returns:
+            None.
+        """
         if not self._export_equation_enabled:
             return
         from tf2rl.networks.equation_export import (
@@ -194,7 +303,14 @@ class ImitationTrainer(OffPolicyTrainer):
 
     @staticmethod
     def get_argument(parser=None):
-        """Add this component's command-line options and return the argument parser."""
+        """Add this component's command-line options and return the argument parser.
+
+        Args:
+            parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+        Returns:
+            argparse.ArgumentParser: Parser extended with the supported component options.
+        """
         parser = OffPolicyTrainer.get_argument(parser)
         parser.add_argument("--expert-path-dir", default=None)
         parser.add_argument("--discriminator-noise", type=float, default=0.15)

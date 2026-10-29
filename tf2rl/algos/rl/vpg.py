@@ -26,7 +26,29 @@ class VPG(OnPolicyAgent):
             hidden_activation_critic="relu",
             name="VPG",
             **kwargs):
-        """Configure the agent's networks, optimizers, and training hyperparameters."""
+        """Configure the agent's networks, optimizers, and training hyperparameters.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            is_discrete (bool): Select a categorical policy instead of a continuous Gaussian policy.
+            actor (keras.Model or None): Optional externally constructed actor network.
+            critic (keras.Model or None): Optional externally constructed value network.
+            actor_critic (keras.Model or None): Optional shared network returning actions, densities,
+                and values.
+            max_action (float): Symmetric continuous-action bound or output scale.
+            actor_units (sequence[int]): Widths of the actor hidden layers.
+            critic_units (sequence[int]): Widths of the critic hidden layers.
+            lr_actor (float): Actor optimizer learning rate.
+            lr_critic (float): Critic optimizer learning rate.
+            hidden_activation_actor (str or callable): Activation used by actor hidden layers.
+            hidden_activation_critic (str or callable): Activation used by critic hidden layers.
+            name (str): Name assigned to the model, operation, or registered component.
+            **kwargs (dict): Additional keyword arguments forwarded to OnPolicyAgent construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name, **kwargs)
         self._is_discrete = is_discrete
 
@@ -66,7 +88,18 @@ class VPG(OnPolicyAgent):
         self._state_ndim = np.array(state_shape).shape[0]
 
     def get_action(self, state, test=False):
-        """Return actions and their log probabilities; test mode selects deterministic actions."""
+        """Return actions and their log probabilities; test mode selects deterministic actions.
+
+        Args:
+            state (np.ndarray or LazyFrames): One observation or a batch. LazyFrames is materialized
+                before the NumPy-array requirement is checked.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Sampled/evaluation actions and log probabilities. One-state
+                actions are unbatched; the log-probability result retains its batch dimension.
+        """
         if isinstance(state, LazyFrames):
             state = np.array(state)
         msg = "Input instance should be np.ndarray, not {}".format(type(state))
@@ -83,7 +116,19 @@ class VPG(OnPolicyAgent):
             return action.numpy(), logp.numpy()
 
     def get_action_and_val(self, state, test=False):
-        """Return a policy action, its log probability, and the estimated state value."""
+        """Return a policy action, its log probability, and the estimated state value.
+
+        Args:
+            state (np.ndarray or LazyFrames): One observation or batch; the observation rank determines
+                whether action/value outputs are unbatched.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple: NumPy actions, action log probabilities, and values. For a single observation, action
+                and value are unbatched while the log probability retains its batch dimension; batched
+                input preserves all batch axes.
+        """
         if isinstance(state, LazyFrames):
             state = np.array(state)
         is_single_input = state.ndim == self._state_ndim
@@ -99,13 +144,34 @@ class VPG(OnPolicyAgent):
         return action.numpy(), logp.numpy(), v.numpy()
 
     def get_action_and_val_tensor(self, states, test=False):
-        """Return batched on-policy inference tensors on the configured device."""
+        """Return batched on-policy inference tensors on the configured device.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor]: Batched actions, action log probabilities, and
+                values; discrete shared networks retain their own density convention.
+        """
         with tf.device(self.device):
             return self._get_action_logp_v_body(states, test)
 
     @tf.function
     def _get_action_logp_v_body(self, state, test):
-        """Return sampled actions, their log probabilities, and state-value estimates."""
+        """Return sampled actions, their log probabilities, and state-value estimates.
+
+        Args:
+            state (tf.Tensor): Observation batch shaped (batch, *state_shape); callers must add a batch
+                axis to individual observations.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor]: Actions, densities, and state values returned by the
+                separate or shared actor/value networks.
+        """
         if self.actor_critic is not None:
             return self.actor_critic(state, test=test)
         else:
@@ -115,7 +181,18 @@ class VPG(OnPolicyAgent):
 
     @tf.function
     def _get_action_body(self, state, test):
-        """Return batched policy actions and log probabilities on the configured device."""
+        """Return batched policy actions and log probabilities on the configured device.
+
+        Args:
+            state (tf.Tensor): Observation batch shaped (batch, *state_shape); callers must add a batch
+                axis to individual observations.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Batched actions and their policy log probabilities, or the
+                corresponding shared-network density output.
+        """
         if self.actor_critic is not None:
             action, logp, _ = self.actor_critic(state, test=test)
             return action, logp
@@ -123,7 +200,14 @@ class VPG(OnPolicyAgent):
             return self.actor(state, test=test)
 
     def initialize_tensor_training(self, states):
-        """Build actor/value networks and optimizer slots on the learner device."""
+        """Build actor/value networks and optimizer slots on the learner device.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            None.
+        """
         with tf.device(self.device):
             self.get_action_and_val_tensor(states)
             if self.actor_critic is not None:
@@ -133,19 +217,48 @@ class VPG(OnPolicyAgent):
                 self.critic_optimizer.build(self.critic.trainable_variables)
 
     def get_value_tensor(self, states):
-        """Evaluate the baseline for separate or shared actor/value networks."""
+        """Evaluate the baseline for separate or shared actor/value networks.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: State values of shape (batch,), computed without copying to NumPy.
+        """
         with tf.device(self.device):
             return self._get_value_body(states)
 
     @tf.function(reduce_retracing=True)
     def _get_value_body(self, states):
+        """Evaluate the shared or separate state-value model on a tensor batch.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: State-value estimates from the shared actor-critic or separate critic.
+        """
         if self.actor_critic is not None:
             return self.actor_critic(states, test=True)[2]
         return self.critic(states)
 
     @tf.function(reduce_retracing=True)
     def train_tensor(self, states, actions, advantages, logp_olds, returns):
-        """Apply vanilla policy gradients and value regression without host copies."""
+        """Apply vanilla policy gradients and value regression without host copies.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            advantages (array_like): Fixed policy advantages, one value per sampled transition.
+            logp_olds (array_like): Collection-time log probabilities of the actions, held fixed during
+                updates.
+            returns (array_like): Discounted return targets, one value per transition.
+
+        Returns:
+            tf.Tensor: Diagnostics of shape (3,): actor loss, critic loss, and estimated KL, after one
+                minibatch update.
+        """
         with tf.device(self.device):
             if self.actor_critic is not None:
                 return self._train_shared_body(states, actions, advantages, logp_olds, returns)
@@ -155,7 +268,21 @@ class VPG(OnPolicyAgent):
             return tf.stack((actor_loss, critic_loss, kl))
 
     def _train_shared_body(self, states, actions, advantages, logp_olds, returns):
-        """Apply the VPG and value losses to a shared actor-critic model."""
+        """Apply the VPG and value losses to a shared actor-critic model.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            advantages (array_like): Fixed policy advantages, one value per sampled transition.
+            logp_olds (array_like): Collection-time log probabilities of the actions, held fixed during
+                updates.
+            returns (array_like): Discounted return targets, one value per transition.
+
+        Returns:
+            tf.Tensor: Diagnostics [actor_loss, critic_loss, estimated_kl] after updating the shared
+                network.
+        """
         with tf.GradientTape() as tape:
             logp = self.actor_critic.compute_log_probs(states, actions)
             values = self.actor_critic(states, test=True)[2]
@@ -169,7 +296,21 @@ class VPG(OnPolicyAgent):
 
     def train(self, states, actions, advantages, logp_olds, returns):
         # Train actor and critic
-        """Update the policy and value function from sampled returns and advantages."""
+        """Update the policy and value function from sampled returns and advantages.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            advantages (array_like): Fixed policy advantages, one value per sampled transition.
+            logp_olds (array_like): Collection-time log probabilities of the actions, held fixed during
+                updates.
+            returns (array_like): Discounted return targets, one value per transition.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Scalar actor and critic losses after the legacy public update
+                path.
+        """
         if self.actor_critic is not None:
             actor_loss, critic_loss, kl = tf.unstack(
                 self.train_tensor(states, actions, advantages, logp_olds, returns))
@@ -201,7 +342,20 @@ class VPG(OnPolicyAgent):
 
     @tf.function
     def _train_actor_body(self, states, actions, advantages, logp_olds):
-        """Apply one policy-gradient update and return the optimization diagnostics."""
+        """Apply one policy-gradient update and return the optimization diagnostics.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            advantages (array_like): Fixed policy advantages, one value per sampled transition.
+            logp_olds (array_like): Collection-time log probabilities of the actions, held fixed during
+                updates. This implementation does not read this argument.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Scalar policy-gradient loss and per-action log probabilities
+                after the actor update.
+        """
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 log_probs = self.actor.compute_log_probs(states, actions)
@@ -217,7 +371,15 @@ class VPG(OnPolicyAgent):
 
     @tf.function
     def _train_critic_body(self, states, returns):
-        """Fit the state-value network to the supplied return targets."""
+        """Fit the state-value network to the supplied return targets.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            returns (array_like): Discounted return targets, one value per transition.
+
+        Returns:
+            tf.Tensor: Scalar value-regression loss after the critic update.
+        """
         with tf.device(self.device):
             # Train baseline
             with tf.GradientTape() as tape:

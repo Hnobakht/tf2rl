@@ -10,7 +10,19 @@ from tf2rl.utils.tensorflow import update_target_variables
 class Actor(tf.keras.Model):
     """Deterministic policy mapping state vectors to bounded continuous actions."""
     def __init__(self, state_shape, action_dim, max_action, units=(400, 300), name="Actor"):
-        """Build the deterministic policy and set its continuous action bounds."""
+        """Build the deterministic policy and set its continuous action bounds.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            max_action (float): Symmetric continuous-action bound or output scale.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         initializer = tf.keras.initializers.TruncatedNormal(mean=0., stddev=2e-3)
@@ -23,7 +35,16 @@ class Actor(tf.keras.Model):
 
 
     def call(self, inputs):
-        """Return bounded continuous actions for the input observation batch."""
+        """Return bounded continuous actions for the input observation batch.
+
+        Args:
+            inputs (tf.Tensor): Observation batch shaped (batch, *state_shape); pixel models accept
+                image observations.
+
+        Returns:
+            tf.Tensor: Deterministic continuous actions shaped (batch, action_dim), bounded by
+                max_action.
+        """
         features = tf.nn.relu(self.l1(inputs))
         features = tf.nn.relu(self.l2(features))
         features = self.l3(features)
@@ -34,7 +55,19 @@ class Actor(tf.keras.Model):
 class Critic(tf.keras.Model):
     """Action-value network for deterministic continuous-control agents."""
     def __init__(self, state_shape, action_dim, units=(400, 300), name="Critic"):
-        """Build the state-action value network and initialize its parameters."""
+        """Build the state-action value network and initialize its parameters.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector. This
+                implementation does not read this argument.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         self.l1 = Dense(units[0], name="L1")
@@ -43,7 +76,16 @@ class Critic(tf.keras.Model):
 
 
     def call(self, states, actions):
-        """Return Q-value estimates for a batch of state-action pairs."""
+        """Return Q-value estimates for a batch of state-action pairs.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+
+        Returns:
+            tf.Tensor: State-action Q estimates shaped (batch,).
+        """
         features = tf.concat((states, actions), axis=1)
         features = tf.nn.relu(self.l1(features))
         features = tf.nn.relu(self.l2(features))
@@ -73,7 +115,30 @@ class DDPG(OffPolicyAgent):
             memory_capacity=int(1e6),
             is_absorbed_state=False,
             **kwargs):
-        """Configure the agent's networks, optimizers, and training hyperparameters."""
+        """Configure the agent's networks, optimizers, and training hyperparameters.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            name (str): Name assigned to the model, operation, or registered component.
+            max_action (float): Symmetric continuous-action bound or output scale.
+            lr_actor (float): Actor optimizer learning rate.
+            lr_critic (float): Critic optimizer learning rate.
+            actor_units (sequence[int]): Widths of the actor hidden layers.
+            critic_units (sequence[int]): Widths of the critic hidden layers.
+            sigma (float): Standard deviation of Gaussian exploration noise.
+            tau (float): Target-network interpolation coefficient: target <- (1-tau)*target +
+                tau*online; 1 copies all weights.
+            n_warmup (int): Number of physical transitions collected with random actions before
+                learning.
+            memory_capacity (int): Maximum number of transitions retained in replay.
+            is_absorbed_state (bool): Use DAC absorbing Bellman targets and omit synthetic loops from
+                actor losses.
+            **kwargs (dict): Additional keyword arguments forwarded to OffPolicyAgent construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name, memory_capacity=memory_capacity, n_warmup=n_warmup, **kwargs)
         self._is_absorbed_state = is_absorbed_state
         self._replay = ReplaySemantics(is_absorbed_state)
@@ -95,7 +160,15 @@ class DDPG(OffPolicyAgent):
         self._initialize_networks(state_shape, action_dim)
 
     def _initialize_networks(self, state_shape, action_dim):
-        """Build lazy Keras networks before copying targets or creating optimizer slots."""
+        """Build lazy Keras networks before copying targets or creating optimizer slots.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+
+        Returns:
+            None.
+        """
         with tf.device(self.device):
             dtype = tf.uint8 if getattr(self, "_is_pixels", False) else tf.float32
             states = tf.zeros((1, *state_shape), dtype)
@@ -110,12 +183,35 @@ class DDPG(OffPolicyAgent):
             self.critic_optimizer.build(self.critic.trainable_variables)
 
     def get_action_tensor(self, states, test=False):
-        """Tensor inference shared by DDPG and TD3 vector collectors."""
+        """Tensor inference shared by DDPG and TD3 vector collectors.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tf.Tensor: Continuous actions shaped (batch, action_dim), optionally perturbed for
+                exploration and clipped to the action bounds.
+        """
         with tf.device(self.device):
             return self.get_action(states, test=test, tensor=True)
 
     def get_action(self, state, test=False, tensor=False):
-        """Select an action for one observation or a batch; test mode disables exploration."""
+        """Select an action for one observation or a batch; test mode disables exploration.
+
+        Args:
+            state (np.ndarray or tf.Tensor): One observation or batch; tensor=False requires NumPy
+                input, while tensor=True permits tensor input.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+            tensor (bool): Return a TensorFlow tensor instead of converting the action to NumPy, where
+                implemented.
+
+        Returns:
+            np.ndarray or tf.Tensor: Continuous action vector for a single state or action batch for
+                batched states; tensor=True retains the tensor batch dimension.
+        """
         is_single_state = len(state.shape) == 1
         if not tensor:
             assert isinstance(state, np.ndarray)
@@ -131,7 +227,18 @@ class DDPG(OffPolicyAgent):
 
     @tf.function
     def _get_action_body(self, state, sigma, max_action):
-        """Compute policy actions for a batch on the configured TensorFlow device."""
+        """Compute policy actions for a batch on the configured TensorFlow device.
+
+        Args:
+            state (tf.Tensor): Observation batch shaped (batch, *state_shape); callers must add a batch
+                axis to individual observations.
+            sigma (float): Standard deviation of Gaussian exploration noise.
+            max_action (float): Symmetric continuous-action bound or output scale.
+
+        Returns:
+            tf.Tensor: Batched deterministic actor outputs plus Gaussian exploration noise, clipped to
+                [-max_action, max_action].
+        """
         print("[DEBUG] initializing {_get_action_body DDPG}.")
         with tf.device(self.device):
             action = self.actor(state)
@@ -141,8 +248,25 @@ class DDPG(OffPolicyAgent):
             return tf.clip_by_value(action, -max_action, max_action)
 
     def train(self, states, actions, next_states, rewards, done, weights=None):
-        """
-        Update the actor and critics from a replay minibatch and return temporal-difference errors.
+        """Update the actor and critics from a replay minibatch and return temporal-difference
+        errors.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            done (array_like): Replay termination flags, or DAC masks when the selected replay encoding
+                requires them.
+            weights (array_like or None): Per-transition importance-sampling weights, shaped (batch,) or
+                (batch, 1); public update methods replace None with unit weights.
+
+        Returns:
+            tf.Tensor: Per-transition TD-error diagnostic returned by the update, after updating online
+                and target networks.
         """
         if weights is None:
             weights = np.ones_like(rewards)
@@ -161,7 +285,25 @@ class DDPG(OffPolicyAgent):
 
     @tf.function
     def _train_body(self, states, actions, next_states, rewards, dones, weights):
-        """Apply actor and critic gradient updates, update target networks, and return diagnostics.
+        """Apply actor and critic gradient updates, update target networks, and return
+        diagnostics.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+            weights (array_like or None): Per-transition importance-sampling weights, shaped (batch,) or
+                (batch, 1); public update methods replace None with unit weights.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor]: Scalar actor loss, scalar critic loss, and signed
+                per-transition TD errors.
         """
         print("[DEBUG] initializing {_train_body}.")
         with tf.device(self.device):
@@ -195,7 +337,22 @@ class DDPG(OffPolicyAgent):
             return actor_loss, critic_loss, td_errors
 
     def compute_td_error(self, states, actions, next_states, rewards, dones):
-        """Return temporal-difference errors for the supplied transition batch."""
+        """Return temporal-difference errors for the supplied transition batch.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+
+        Returns:
+            np.ndarray: Flat absolute TD residuals of shape (batch,) for replay-priority updates.
+        """
         if isinstance(actions, tf.Tensor):
             rewards = tf.expand_dims(rewards, axis=1)
             dones = tf.expand_dims(dones, 1)
@@ -205,7 +362,22 @@ class DDPG(OffPolicyAgent):
 
     @tf.function
     def _compute_td_error_body(self, states, actions, next_states, rewards, dones):
-        """Compute batched temporal-difference errors using the target networks."""
+        """Compute batched temporal-difference errors using the target networks.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+                have a trailing singleton axis.
+            dones (array_like): Replay termination indicators. DAC-aware agents instead accept masks 1
+                (continuing), 0 (terminal), and -1 (absorbing loop).
+
+        Returns:
+            tf.Tensor: Signed per-transition Bellman residuals without applying optimizer updates.
+        """
         print("[DEBUG] initializing {_compute_td_error_body}.")
         rewards = tf.reshape(rewards, (-1,))
         dones = tf.reshape(dones, (-1,))
@@ -220,7 +392,14 @@ class DDPG(OffPolicyAgent):
 
     @staticmethod
     def get_argument(parser=None):
-        """Add this component's command-line options and return the argument parser."""
+        """Add this component's command-line options and return the argument parser.
+
+        Args:
+            parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+        Returns:
+            argparse.ArgumentParser: Parser extended with the supported component options.
+        """
         parser = OffPolicyAgent.get_argument(parser)
         parser.add_argument('--lr', type=float, default=3e-4, help=" <default: %(default)s>")
         parser.add_argument('--draw-reward-function', action="store_true", help=" <default: %(default)s>")

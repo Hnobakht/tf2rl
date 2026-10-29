@@ -9,7 +9,15 @@ from tf2rl.networks.actors import CategoricalActorCritic, CategoricalActor
 class AtariBaseModel(tf.keras.Model):
     """Convolutional Atari feature extractor with optional noisy dense layers."""
     def __init__(self, name, enable_noisy_dqn=False):
-        """Build the Atari convolutional layers and choose standard or noisy dense features."""
+        """Build the Atari convolutional layers and choose standard or noisy dense features.
+
+        Args:
+            name (str): Name assigned to the model, operation, or registered component.
+            enable_noisy_dqn (bool): Use noisy dense layers for value-based exploration.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         DenseLayer = NoisyDense if enable_noisy_dqn else Dense
@@ -27,7 +35,16 @@ class AtariBaseModel(tf.keras.Model):
 
     def call(self, inputs):
         # TODO: This type conversion seems to be bottle neck
-        """Scale byte images to floats and extract convolutional features."""
+        """Scale byte images to floats and extract convolutional features.
+
+        Args:
+            inputs (tf.Tensor): Observation batch shaped (batch, *state_shape); pixel models accept
+                image observations.
+
+        Returns:
+            tf.Tensor: Flattened convolutional features for the uint8 image batch, after scaling pixels
+                by 1/255.
+        """
         features = tf.divide(tf.cast(inputs, tf.float32),
                              tf.constant(255.))
 
@@ -43,8 +60,23 @@ class AtariQFunc(AtariBaseModel):
                  name="QFunc", enable_dueling_dqn=False,
                  enable_noisy_dqn=False, enable_categorical_dqn=False,
                  n_atoms=51):
-        """
-        Configure the Atari action-value head and optional dueling, noisy, or categorical variants.
+        """Configure the Atari action-value head and optional dueling, noisy, or categorical
+        variants.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            units (sequence[int] or None): Hidden-layer widths in forward order. This implementation
+                does not read this argument.
+            name (str): Name assigned to the model, operation, or registered component.
+            enable_dueling_dqn (bool): Separate the value and advantage heads of the Q network.
+            enable_noisy_dqn (bool): Use noisy dense layers for value-based exploration.
+            enable_categorical_dqn (bool): Produce a categorical return distribution instead of scalar
+                Q-values.
+            n_atoms (int): Number of atoms in each categorical return distribution.
+
+        Returns:
+            None: Initializes the instance.
         """
         self._enable_dueling_dqn = enable_dueling_dqn
         self._enable_noisy_dqn = enable_noisy_dqn
@@ -70,7 +102,16 @@ class AtariQFunc(AtariBaseModel):
 
     def call(self, inputs):
         # Extract features on base layers
-        """Return action values or categorical value distributions from Atari images."""
+        """Return action values or categorical value distributions from Atari images.
+
+        Args:
+            inputs (tf.Tensor): Observation batch shaped (batch, *state_shape); pixel models accept
+                image observations.
+
+        Returns:
+            tf.Tensor: Q-values shaped (batch, action_dim), or clipped atom probabilities shaped (batch,
+                action_dim, n_atoms) in categorical mode.
+        """
         features = super().call(inputs)
 
         if self._enable_categorical_dqn:
@@ -106,7 +147,18 @@ class AtariCategoricalActor(CategoricalActor, AtariBaseModel):
     """Categorical action policy built on Atari image features."""
     def __init__(self, state_shape, action_dim, units=None,
                  name="AtariCategoricalActor"):
-        """Build the Atari feature extractor and categorical action head."""
+        """Build the Atari feature extractor and categorical action head.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            units (sequence[int] or None): Hidden-layer widths in forward order. This implementation
+                does not read this argument.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         self.action_dim = action_dim
 
         # Build base layers
@@ -120,7 +172,14 @@ class AtariCategoricalActor(CategoricalActor, AtariBaseModel):
 
     def _compute_features(self, states):
         # Extract features on base layers
-        """Transform a batch of observations into policy features."""
+        """Transform a batch of observations into policy features.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: Atari convolutional features preserving the leading batch dimension.
+        """
         return AtariBaseModel.call(self, states)
 
 
@@ -128,7 +187,18 @@ class AtariCategoricalActorCritic(CategoricalActorCritic, AtariBaseModel):
     """Atari policy with shared image features and a state-value head."""
     def __init__(self, state_shape, action_dim, units=None,
                  name="AtariCategoricalActorCritic"):
-        """Build Atari image features with categorical action and state-value heads."""
+        """Build Atari image features with categorical action and state-value heads.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            units (sequence[int] or None): Hidden-layer widths in forward order. This implementation
+                does not read this argument.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         AtariBaseModel.__init__(self, name=name)
         self.action_dim = action_dim
 
@@ -139,5 +209,12 @@ class AtariCategoricalActorCritic(CategoricalActorCritic, AtariBaseModel):
             np.zeros(shape=(1,) + state_shape, dtype=np.float32)))
 
     def _compute_feature(self, states):
-        """Extract convolutional features from a batch of Atari observations."""
+        """Extract convolutional features from a batch of Atari observations.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: Atari convolutional features preserving the leading batch dimension.
+        """
         return AtariBaseModel.call(self, states)

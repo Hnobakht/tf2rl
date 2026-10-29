@@ -6,19 +6,49 @@ import numpy as np
 class LearnedRewardWrapper(gym.Wrapper):
     """Replace environment rewards with learned rewards while retaining originals in info."""
     def __init__(self, env, irl):
-        """Attach the learned reward model and clear the cached previous observation."""
+        """Attach the learned reward model and clear the cached previous observation.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            irl (RewardLearner or None): Learned reward/discriminator component; its requirements
+                determine whether action densities are needed.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(env)
         self.irl = irl
         self._observation = None
 
     def reset(self, **kwargs):
-        """Reset the environment and cache the initial observation for reward inference."""
+        """Reset the environment and cache the initial observation for reward inference.
+
+        Args:
+            **kwargs (dict): Reset options forwarded to the wrapped environment, such as seed and
+                options.
+
+        Returns:
+            tuple: Initial wrapped observation and reset info, following the Gymnasium reset API.
+        """
         observation, info = self.env.reset(**kwargs)
         self._observation = observation.copy()
         return observation, info
 
     def step(self, action):
-        """Step with a learned reward and store the original reward in info; require reset first."""
+        """Step with a learned reward and store the original reward in info; require reset
+        first.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+
+        Returns:
+            tuple: Gymnasium (observation, reward, terminated, truncated, info) result with the wrapper
+                observation/reward transformation.
+
+        Raises:
+            RuntimeError: Call reset before stepping a learned-reward environment.
+        """
         if self._observation is None:
             raise RuntimeError("Call reset before stepping a learned-reward environment")
         observation, reward, terminated, truncated, info = self.env.step(action)
@@ -43,7 +73,24 @@ from tf2rl.algos.imitation.gaifo_eqn import Discriminator_EQL as State_only_disc
 class WeightAtolApply(gym.Wrapper):
     """Suppress small restored reward-network weights using an absolute or relative threshold."""
     def __init__(self, env, atol=0.01, drop = None, is_show = False, is_figure = False):
-        """Suppress restored reward weights using exactly one of atol or relative drop."""
+        """Suppress restored reward weights using exactly one of atol or relative drop.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            atol (float): Absolute weight threshold used by legacy tolerance-based inference copies.
+            drop (float or None): Relative parameter threshold computed from the weight standard
+                deviation.
+            is_show (bool): Print the filtered reward-network weights.
+            is_figure (bool): Historical plotting option retained by the wrapper constructor. This
+                implementation does not read this argument.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            AttributeError: atol and drop cant be both NONE value. atol and drop cant be both selected.
+        """
         if atol is None and drop is None:
             raise AttributeError("atol and drop cant be both NONE value")
         elif atol is not None and drop is not None:
@@ -70,19 +117,50 @@ class WeightAtolApply(gym.Wrapper):
         self.env.disc.set_weights(weights)
 
     def step(self, action, state=None):
-        """Forward the action and optional previous state to the wrapped reward environment."""
+        """Forward the action and optional previous state to the wrapped reward environment.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+            state (np.ndarray or None): Previous physical observation required to compute this legacy
+                wrapper reward; callers must supply it.
+
+        Returns:
+            tuple: Wrapped legacy reward environment step result, forwarded unchanged.
+        """
         return self.env.step(action, state)
 
     @property
     def _max_episode_steps(self):
-        """Return the wrapped environment's episode time limit."""
+        """Return the wrapped environment's episode time limit.
+
+        Returns:
+            int or None: Episode horizon supplied by the wrapped environment specification or legacy
+                time-limit attribute.
+        """
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 
 class GailExternalReward(gym.Wrapper):
     """Legacy environment wrapper using rewards from a saved GAIL discriminator."""
     def __init__(self, env, path, units, gpu=0, enable_sn=False, dac_reward = False):
-        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
+        """Wrap the environment and restore the reward model from the latest checkpoint in
+        path.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            path (str or Path): Directory containing the latest TensorFlow reward-network checkpoint to
+                restore.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            dac_reward (bool): Historical absorbing-reward option retained by the constructor; currently
+                unused.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(env)
         self.env = env
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
@@ -97,7 +175,17 @@ class GailExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
-        """Step the legacy environment using the previous state to compute a learned reward."""
+        """Step the legacy environment using the previous state to compute a learned reward.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+            state (np.ndarray or None): Previous physical observation required to compute this legacy
+                wrapper reward; callers must supply it.
+
+        Returns:
+            tuple: Legacy (next_observation, learned_reward, done, info); original reward is stored in
+                info["reward"].
+        """
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [GailExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -112,8 +200,16 @@ class GailExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
-        """
-        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """Evaluate the restored reward model on a batch using this wrapper's reward sign
+        convention.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+
+        Returns:
+            tf.Tensor: Learned reward batch under this legacy wrapper sign convention, shaped (batch,
+                1).
         """
         print("[DEBUG] Initializing _step_body [GailEQLExternalReward]")
         with tf.device(self.device):
@@ -121,14 +217,40 @@ class GailExternalReward(gym.Wrapper):
 
     @property
     def _max_episode_steps(self):
-        """Return the wrapped environment's episode time limit."""
+        """Return the wrapped environment's episode time limit.
+
+        Returns:
+            int or None: Episode horizon supplied by the wrapped environment specification or legacy
+                time-limit attribute.
+        """
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 
 class GailEQLExternalReward(gym.Wrapper):
     """Legacy environment wrapper using rewards from a saved EQN-GAIL discriminator."""
     def __init__(self, env, path, num_layers, v, exclude, gpu=0, enable_sn=False, dac_reward = False):
-        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
+        """Wrap the environment and restore the reward model from the latest checkpoint in
+        path.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            path (str or Path): Directory containing the latest TensorFlow reward-network checkpoint to
+                restore.
+            num_layers (int): Number of equation layers.
+            v (sequence[int] or int): Operator repetition counts, one per equation layer; an individual
+                layer takes one count.
+            exclude (sequence or None): Equation operators to exclude; network constructors use one
+                exclusion list per layer.
+            gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            dac_reward (bool): Historical absorbing-reward option retained by the constructor; currently
+                unused.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(env)
         self.env = env
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
@@ -151,7 +273,17 @@ class GailEQLExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
-        """Step the legacy environment using the previous state to compute a learned reward."""
+        """Step the legacy environment using the previous state to compute a learned reward.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+            state (np.ndarray or None): Previous physical observation required to compute this legacy
+                wrapper reward; callers must supply it.
+
+        Returns:
+            tuple: Legacy (next_observation, learned_reward, done, info); original reward is stored in
+                info["reward"].
+        """
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [GailEQLExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -166,8 +298,16 @@ class GailEQLExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
-        """
-        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """Evaluate the restored reward model on a batch using this wrapper's reward sign
+        convention.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+
+        Returns:
+            tf.Tensor: Learned reward batch under this legacy wrapper sign convention, shaped (batch,
+                1).
         """
         print("[DEBUG] Initializing _step_body [GailEQLExternalReward]")
         with tf.device(self.device):
@@ -175,13 +315,41 @@ class GailEQLExternalReward(gym.Wrapper):
 
     @property
     def _max_episode_steps(self):
-        """Return the wrapped environment's episode time limit."""
+        """Return the wrapped environment's episode time limit.
+
+        Returns:
+            int or None: Episode horizon supplied by the wrapped environment specification or legacy
+                time-limit attribute.
+        """
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 class AirlEQLExternalReward(gym.Wrapper):
     """Legacy environment wrapper using rewards from a saved EQN-AIRL model."""
     def __init__(self, env, path, num_layers, v, exclude, units, state_only = False, gpu=0, enable_sn=False, dac_reward = False):
-        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
+        """Wrap the environment and restore the reward model from the latest checkpoint in
+        path.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            path (str or Path): Directory containing the latest TensorFlow reward-network checkpoint to
+                restore.
+            num_layers (int): Number of equation layers.
+            v (sequence[int] or int): Operator repetition counts, one per equation layer; an individual
+                layer takes one count.
+            exclude (sequence or None): Equation operators to exclude; network constructors use one
+                exclusion list per layer.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            state_only (bool): Build the learned reward from observations without concatenating actions.
+            gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            dac_reward (bool): Historical absorbing-reward option retained by the constructor; currently
+                unused.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(env)
         self.env = env
         self._is_state_only = state_only
@@ -222,7 +390,17 @@ class AirlEQLExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
-        """Step the legacy environment using the previous state to compute a learned reward."""
+        """Step the legacy environment using the previous state to compute a learned reward.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+            state (np.ndarray or None): Previous physical observation required to compute this legacy
+                wrapper reward; callers must supply it.
+
+        Returns:
+            tuple: Legacy (next_observation, learned_reward, done, info); original reward is stored in
+                info["reward"].
+        """
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [AirlEQLExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -242,8 +420,16 @@ class AirlEQLExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
-        """
-        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """Evaluate the restored reward model on a batch using this wrapper's reward sign
+        convention.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+
+        Returns:
+            tf.Tensor: Learned reward batch under this legacy wrapper sign convention, shaped (batch,
+                1).
         """
         print("[DEBUG] Initializing _step_body [AirlEQLExternalReward]")
         with tf.device(self.device):
@@ -251,14 +437,37 @@ class AirlEQLExternalReward(gym.Wrapper):
 
     @property
     def _max_episode_steps(self):
-        """Return the wrapped environment's episode time limit."""
+        """Return the wrapped environment's episode time limit.
+
+        Returns:
+            int or None: Episode horizon supplied by the wrapped environment specification or legacy
+                time-limit attribute.
+        """
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 
 class AirlExternalReward(gym.Wrapper):
     """Legacy environment wrapper using rewards from a saved AIRL model."""
     def __init__(self, env, path, units, gpu=0, state_only = False, enable_sn=False, dac_reward = False):
-        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
+        """Wrap the environment and restore the reward model from the latest checkpoint in
+        path.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            path (str or Path): Directory containing the latest TensorFlow reward-network checkpoint to
+                restore.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+            state_only (bool): Build the learned reward from observations without concatenating actions.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            dac_reward (bool): Historical absorbing-reward option retained by the constructor; currently
+                unused.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(env)
         self.env = env
         self._is_state_only = state_only
@@ -289,7 +498,17 @@ class AirlExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
-        """Step the legacy environment using the previous state to compute a learned reward."""
+        """Step the legacy environment using the previous state to compute a learned reward.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+            state (np.ndarray or None): Previous physical observation required to compute this legacy
+                wrapper reward; callers must supply it.
+
+        Returns:
+            tuple: Legacy (next_observation, learned_reward, done, info); original reward is stored in
+                info["reward"].
+        """
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [AirlExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -309,8 +528,16 @@ class AirlExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
-        """
-        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """Evaluate the restored reward model on a batch using this wrapper's reward sign
+        convention.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+
+        Returns:
+            tf.Tensor: Learned reward batch under this legacy wrapper sign convention, shaped (batch,
+                1).
         """
         print("[DEBUG] Initializing _step_body [AirlExternalReward]")
         with tf.device(self.device):
@@ -318,13 +545,35 @@ class AirlExternalReward(gym.Wrapper):
 
     @property
     def _max_episode_steps(self):
-        """Return the wrapped environment's episode time limit."""
+        """Return the wrapped environment's episode time limit.
+
+        Returns:
+            int or None: Episode horizon supplied by the wrapped environment specification or legacy
+                time-limit attribute.
+        """
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 class GaifoExternalReward(gym.Wrapper):
     """Legacy environment wrapper using a saved observation-transition discriminator."""
     def __init__(self, env, path, units, gpu=0, enable_sn=False, dac_reward = False):
-        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
+        """Wrap the environment and restore the reward model from the latest checkpoint in
+        path.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            path (str or Path): Directory containing the latest TensorFlow reward-network checkpoint to
+                restore.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            dac_reward (bool): Historical absorbing-reward option retained by the constructor; currently
+                unused.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(env)
         self.env = env
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
@@ -338,7 +587,17 @@ class GaifoExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
-        """Step the legacy environment using the previous state to compute a learned reward."""
+        """Step the legacy environment using the previous state to compute a learned reward.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+            state (np.ndarray or None): Previous physical observation required to compute this legacy
+                wrapper reward; callers must supply it.
+
+        Returns:
+            tuple: Legacy (next_observation, learned_reward, done, info); original reward is stored in
+                info["reward"].
+        """
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [GaifoExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -354,8 +613,16 @@ class GaifoExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
-        """
-        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """Evaluate the restored reward model on a batch using this wrapper's reward sign
+        convention.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+
+        Returns:
+            tf.Tensor: Learned reward batch under this legacy wrapper sign convention, shaped (batch,
+                1).
         """
         print("[DEBUG] Initializing _step_body [GaifoExternalReward]")
         with tf.device(self.device):
@@ -363,14 +630,40 @@ class GaifoExternalReward(gym.Wrapper):
 
     @property
     def _max_episode_steps(self):
-        """Return the wrapped environment's episode time limit."""
+        """Return the wrapped environment's episode time limit.
+
+        Returns:
+            int or None: Episode horizon supplied by the wrapped environment specification or legacy
+                time-limit attribute.
+        """
         return self.env._max_episode_steps  # pylint: disable=protected-access
 
 
 class GaifoEQLExternalReward(gym.Wrapper):
     """Legacy environment wrapper using a saved equation transition discriminator."""
     def __init__(self, env, path, num_layers, v, exclude, gpu=0, enable_sn=False, dac_reward = False):
-        """Wrap the environment and restore the reward model from the latest checkpoint in path."""
+        """Wrap the environment and restore the reward model from the latest checkpoint in
+        path.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            path (str or Path): Directory containing the latest TensorFlow reward-network checkpoint to
+                restore.
+            num_layers (int): Number of equation layers.
+            v (sequence[int] or int): Operator repetition counts, one per equation layer; an individual
+                layer takes one count.
+            exclude (sequence or None): Equation operators to exclude; network constructors use one
+                exclusion list per layer.
+            gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            dac_reward (bool): Historical absorbing-reward option retained by the constructor; currently
+                unused.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(env)
         self.env = env
         self.device = "/gpu:{}".format(gpu) if gpu >= 0 else "/cpu:0"
@@ -392,7 +685,17 @@ class GaifoEQLExternalReward(gym.Wrapper):
         print("[DEBUG] Weights of the reward network are loaded successfully.")
 
     def step(self, action, state=None):
-        """Step the legacy environment using the previous state to compute a learned reward."""
+        """Step the legacy environment using the previous state to compute a learned reward.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+            state (np.ndarray or None): Previous physical observation required to compute this legacy
+                wrapper reward; callers must supply it.
+
+        Returns:
+            tuple: Legacy (next_observation, learned_reward, done, info); original reward is stored in
+                info["reward"].
+        """
         assert state is not None, "[ERROR] The state shoud has value to calculate reward. [GaifoEQLExternalReward]"
 
         next_state, env_rew, done, info = self.env.step(action)
@@ -408,8 +711,16 @@ class GaifoEQLExternalReward(gym.Wrapper):
 
     @tf.function
     def _step_body(self, inputs):
-        """
-        Evaluate the restored reward model on a batch using this wrapper's reward sign convention.
+        """Evaluate the restored reward model on a batch using this wrapper's reward sign
+        convention.
+
+        Args:
+            inputs (tf.Tensor): Batched input features; the final axis contains the model input
+                coordinates.
+
+        Returns:
+            tf.Tensor: Learned reward batch under this legacy wrapper sign convention, shaped (batch,
+                1).
         """
         print("[DEBUG] Initializing _step_body [GaifoEQLExternalReward]")
         with tf.device(self.device):
@@ -417,5 +728,10 @@ class GaifoEQLExternalReward(gym.Wrapper):
 
     @property
     def _max_episode_steps(self):
-        """Return the wrapped environment's episode time limit."""
+        """Return the wrapped environment's episode time limit.
+
+        Returns:
+            int or None: Episode horizon supplied by the wrapped environment specification or legacy
+                time-limit attribute.
+        """
         return self.env._max_episode_steps  # pylint: disable=protected-access

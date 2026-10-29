@@ -12,7 +12,11 @@ from pathlib import Path
 
 
 def main():
-    """Run the configured equation-learning experiments and collect their outputs."""
+    """Run the configured equation-learning experiments and collect their outputs.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=Path('results/equation-learning'))
     parser.add_argument('--expert-dir', type=Path)

@@ -17,7 +17,18 @@ from tf2rl.networks.equation_export import expression_statistics
 
 
 def evaluate(policy, seeds, indicator=.1):
-    """Return seeded Pendulum episode returns for a policy, or random actions if absent."""
+    """Return seeded Pendulum episode returns for a policy, or random actions if absent.
+
+    Args:
+        policy (Policy or None): Policy returning actions and log densities; None selects uniformly
+            random bounded actions.
+        seeds (sequence[int]): One environment reset seed per comparison episode; at least one seed
+            is required.
+        indicator (float): Absorbing-state indicator appended by the evaluation wrapper.
+
+    Returns:
+        np.ndarray: One undiscounted evaluation return for each supplied reset seed.
+    """
     env = gym.vector.SyncVectorEnv([
         lambda: AbsorbingWrapper(gym.make('Pendulum-v1'), indicator) for _ in seeds
     ])
@@ -43,14 +54,26 @@ def evaluate(policy, seeds, indicator=.1):
 
 
 def summarize(returns):
-    """Return episode returns together with their mean, sample deviation, and range."""
+    """Return episode returns together with their mean, sample deviation, and range.
+
+    Args:
+        returns (np.ndarray): One-dimensional episode-return array; sample standard deviation
+            requires at least two episodes.
+
+    Returns:
+        dict: Mean, sample standard deviation, minimum, maximum, and the full return list.
+    """
     return {'mean': float(np.mean(returns)), 'std': float(np.std(returns, ddof=1)),
             'min': float(np.min(returns)), 'max': float(np.max(returns)),
             'returns': returns.tolist()}
 
 
 def main():
-    """Compare trained policies with random actions on matching Pendulum seeds."""
+    """Compare trained policies with random actions on matching Pendulum seeds.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('runs', nargs='+', type=Path)
     parser.add_argument('--episodes', type=int, default=50)

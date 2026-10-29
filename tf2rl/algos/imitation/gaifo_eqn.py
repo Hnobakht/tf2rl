@@ -15,7 +15,35 @@ class Discriminator_EQL(tf.keras.Model):
                  name="GAIfO_Discriminator", v=None, exclude=None, atol=0, constraint=None,
                  w_initializer='random_normal', b_initializer='random_normal',
                  is_lmbda_dynamic = False):
-        """Build the equation discriminator with operator groups, dropout, and regularization."""
+        """Build the equation discriminator with operator groups, dropout, and regularization.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            num_layers (int): Number of equation layers.
+            drop_out (float or sequence[float] or None): Dropout probability, or one probability per
+                equation layer; None disables dropout.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it. This implementation does not read this argument.
+            output_activation (str or callable or None): Activation used by the scalar or discriminator
+                output layer.
+            lmbda (float): L1 regularization coefficient for equation parameters.
+            name (str): Name assigned to the model, operation, or registered component.
+            v (sequence[int] or int or None): Operator repetition counts, one per equation layer; an
+                individual layer takes one count.
+            exclude (sequence or None): Equation operators to exclude; network constructors use one
+                exclusion list per layer.
+            atol (float): Absolute weight threshold used by legacy tolerance-based inference copies.
+            constraint (callable or None): Keras weight constraint applied when parameters are updated.
+            w_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                weights.
+            b_initializer (str or keras.initializers.Initializer): Initializer for equation-layer
+                biases.
+            is_lmbda_dynamic (bool): Historical dynamic-regularization option; unsupported
+                configurations may be rejected.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
         print("[DEBUG] Building [__init__ Discriminator_EQL]")
         self.num_layers = num_layers
@@ -76,7 +104,20 @@ class Discriminator_EQL(tf.keras.Model):
                   .format(input_tf.shape, self(input_tf, training=False).shape, self.name))
 
     def call(self, inputs, training=None, l1_regularizers = 0):
-        """Return discriminator outputs for the supplied batch of inputs."""
+        """Return discriminator outputs for the supplied batch of inputs.
+
+        Args:
+            inputs (tf.Tensor): Batched discriminator inputs with concatenated state/action or
+                state/successor coordinates as required by the model.
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it.
+
+        Returns:
+            tf.Tensor: Scalar discriminator or reward outputs shaped (batch, 1), with the configured
+                output activation.
+        """
         print("[DEBUG] initializing [call Discriminator_EQL shapes: {} name: {}".format(inputs.shape, self.name))
 
         if training is None:
@@ -94,7 +135,18 @@ class Discriminator_EQL(tf.keras.Model):
         return self.layer_out(features, training=training, l1_regularizers=l1_regularizers)
 
     def compute_reward(self, inputs, l1_regularizers = 0):
-        """Return stabilized discriminator log odds for each input sample."""
+        """Return stabilized discriminator log odds for each input sample.
+
+        Args:
+            inputs (tf.Tensor): Batched discriminator inputs with concatenated state/action or
+                state/successor coordinates as required by the model.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it.
+
+        Returns:
+            tf.Tensor: State-transition discriminator log-odds rewards shaped (batch, 1), using the
+                configured online/target model.
+        """
         print("[DEBUG] initializing [compute_reward Discriminator_EQL] shape: {} name: {}".format(inputs.shape, self.name))
         return tf.math.log(self(inputs, training=False, l1_regularizers=l1_regularizers) + 1e-8) - \
                tf.math.log(1 - self(inputs, training=False, l1_regularizers=l1_regularizers) + 1e-8)
@@ -124,7 +176,45 @@ class GAIfO_EQL(RewardLearner):
             exclude = None,
             grad_penalty_coeff = 0,
             **kwargs):
-        """Configure the imitation objective, discriminator networks, and optimizer settings."""
+        """Configure the imitation objective, discriminator networks, and optimizer settings.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            training_stages (sequence[int] or None): Counts of warmup and sparse optimizer updates
+                before fixed-mask refitting. This implementation does not read this argument.
+            num_layers (int): Number of equation layers.
+            lr (float): Optimizer learning rate.
+            enable_sn (bool): Request spectral normalization where the selected implementation supports
+                it.
+            name (str): Name assigned to the model, operation, or registered component.
+            is_debug (bool): Enable additional discriminator/parameter diagnostics where implemented.
+            update_delay (int): Run discriminator training only when its supplied iteration is divisible
+                by this value.
+            atol (float): Absolute weight threshold used by legacy tolerance-based inference copies.
+            atol_starting_step (int): Environment-step threshold after which tolerance-based inference
+                is selected.
+            v (sequence[int] or int): Operator repetition counts, one per equation layer; an individual
+                layer takes one count.
+            mask_rate (float): Historical random-masking option; the active staged-sparsity
+                implementations reject nonzero values.
+            masking_starting_step (int): Historical masking start step; unsupported active
+                configurations are rejected.
+            lmbda (float): L1 regularization coefficient for equation parameters.
+            regularizer_starting_step (int): Historical regularizer start step; use training_stages in
+                the active EQN implementations.
+            drop_out (float or sequence[float] or None): Dropout probability, or one probability per
+                equation layer; None disables dropout.
+            tau (float): Target-network interpolation coefficient: target <- (1-tau)*target +
+                tau*online; 1 copies all weights.
+            exclude (sequence or None): Equation operators to exclude; network constructors use one
+                exclusion list per layer.
+            grad_penalty_coeff (float): Coefficient multiplying the discriminator gradient penalty.
+            **kwargs (dict): Additional keyword arguments forwarded to RewardLearner construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name, n_training=1, **kwargs)
         self._is_debug = is_debug
         self.update_delay = update_delay
@@ -150,7 +240,11 @@ class GAIfO_EQL(RewardLearner):
         self._init()
 
     def _init(self):
-        """Create the discriminator copies and initialize their parameters."""
+        """Create the discriminator copies and initialize their parameters.
+
+        Returns:
+            None.
+        """
         self.disc = Discriminator_EQL(state_shape=self.state_shape, v=self.v, drop_out=self.drop_out,
                                       num_layers=self.num_layers, enable_sn=self.enable_sn, constraint=None,
                                       name="Discriminator", lmbda=self.lmbda, exclude = self.exclude,
@@ -169,8 +263,24 @@ class GAIfO_EQL(RewardLearner):
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr, beta_1=0.5)
 
     def train(self, agent_states, agent_next_states, expert_states, expert_next_states, itr, **kwargs):
-        """
-        Update the imitation discriminator from agent and expert minibatches and report diagnostics.
+        """Update the discriminator from agent/expert minibatches and write training
+        diagnostics to TensorBoard.
+
+        Args:
+            agent_states (array_like): Agent observation batch shaped (agent_batch, *state_shape).
+            agent_next_states (array_like): Agent successor observations aligned with agent_states.
+            expert_states (array_like): Expert observation batch shaped (expert_batch, *state_shape).
+            expert_next_states (array_like): Expert successor observations aligned with expert_states.
+            itr (int): Training iteration/environment-step counter used by discriminator update-delay
+                logic.
+            **kwargs (dict): Additional compatibility keyword options, currently unused.
+
+        Returns:
+            None.
+
+        Raises:
+            NotImplementedError: The requested operation or argument combination is unsupported by this
+                component.
         """
         assert itr , "The interation must be defined [train GAIfO_EQL]"
 
@@ -193,7 +303,18 @@ class GAIfO_EQL(RewardLearner):
 
     @tf.function
     def _compute_js_divergence(self, fake_logits, real_logits):
-        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs."""
+        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs.
+
+        Args:
+            fake_logits (tf.Tensor): Agent discriminator outputs used directly in the probability-based
+                divergence calculation.
+            real_logits (tf.Tensor): Expert discriminator outputs used directly in the probability-based
+                divergence calculation.
+
+        Returns:
+            tf.Tensor: Scalar stabilized probability-based Jensen-Shannon diagnostic between agent and
+                expert outputs.
+        """
         print("[DEBUG] initializing [_compute_js_divergence GAIfO_EQL] shape: {TODO}")
         m = (fake_logits + real_logits) / 2.
         return tf.reduce_mean((
@@ -201,8 +322,20 @@ class GAIfO_EQL(RewardLearner):
 
     @tf.function
     def _train_body(self, agent_states, agent_next_states, expert_states, expert_next_states, l1_regularizers):
-        """
-        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """Apply discriminator gradients for the expert and agent batches and return training
+        metrics.
+
+        Args:
+            agent_states (array_like): Agent observation batch shaped (agent_batch, *state_shape).
+            agent_next_states (array_like): Agent successor observations aligned with agent_states.
+            expert_states (array_like): Expert observation batch shaped (expert_batch, *state_shape).
+            expert_next_states (array_like): Expert successor observations aligned with expert_states.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it.
+
+        Returns:
+            tuple: Scalar loss, classification accuracy, JS diagnostic, and equation-discriminator
+                gradients after the update.
         """
         print("[DEBUG] initializing [_train_body GAIfO_EQL] shape: {TODO}")
         epsilon = 1e-8
@@ -242,7 +375,20 @@ class GAIfO_EQL(RewardLearner):
 
     @tf.function
     def _train_body_eql(self, agent_states, agent_next_states, expert_states, expert_next_states, l1_regularizers):
-        """Update the equation discriminator with its regularization and singularity penalties."""
+        """Update the equation discriminator with its regularization and singularity penalties.
+
+        Args:
+            agent_states (array_like): Agent observation batch shaped (agent_batch, *state_shape).
+            agent_next_states (array_like): Agent successor observations aligned with agent_states.
+            expert_states (array_like): Expert observation batch shaped (expert_batch, *state_shape).
+            expert_next_states (array_like): Expert successor observations aligned with expert_states.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it.
+
+        Returns:
+            tuple: Scalar loss, classification accuracy, JS diagnostic, and equation-discriminator
+                gradients after the update.
+        """
         print("[DEBUG] initializing [_train_body_eql GAIfO_EQL] shape: {TODO}")
         epsilon = 1e-8
         with tf.device(self.device):
@@ -283,8 +429,20 @@ class GAIfO_EQL(RewardLearner):
         return loss, accuracy, js_divergence, grads
 
     def inference(self, states, actions, next_states, apply_atol=False):
-        """
-        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """Return learned imitation rewards for the supplied observations and actions or
+        transitions.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like or None): Compatibility action argument; rewards depend on states and
+                next_states instead. This implementation does not read this argument.
+            next_states (array_like): Physical successor observations aligned with the current-state
+                batch.
+            apply_atol (bool): Use the tolerance-filtered reward-network copy for inference.
+
+        Returns:
+            tf.Tensor: State-transition discriminator log-odds rewards shaped (batch, 1), using the
+                configured online/target model.
         """
         if states.ndim == 1:
             states = np.expand_dims(states, axis=0)
@@ -298,7 +456,16 @@ class GAIfO_EQL(RewardLearner):
 
     @tf.function
     def _inference_body_atol(self, inputs):
-        """Evaluate rewards using a copy with small weights suppressed by the tolerance."""
+        """Evaluate rewards using a copy with small weights suppressed by the tolerance.
+
+        Args:
+            inputs (tf.Tensor): Batched discriminator inputs with concatenated state/action or
+                state/successor coordinates as required by the model.
+
+        Returns:
+            tf.Tensor: State-transition discriminator log-odds rewards shaped (batch, 1), using the
+                configured online/target model.
+        """
         print("[DEBUG] initializing [_inference_body_atol GAIfO_EQL] shape: {} name: {}-{}".format(inputs.shape,
                                                                                              self.disc.name,
                                                                                            self.disc_target.name))
@@ -311,8 +478,16 @@ class GAIfO_EQL(RewardLearner):
 
     @tf.function
     def _inference_body(self, inputs):
-        """
-        Return learned imitation rewards for the supplied observations and actions or transitions.
+        """Return learned imitation rewards for the supplied observations and actions or
+        transitions.
+
+        Args:
+            inputs (tf.Tensor): Batched discriminator inputs with concatenated state/action or
+                state/successor coordinates as required by the model.
+
+        Returns:
+            tf.Tensor: State-transition discriminator log-odds rewards shaped (batch, 1), using the
+                configured online/target model.
         """
         print("[DEBUG] initializing [_inference_body GAIfO_EQL] shape: {}".format(inputs.shape))
         with tf.device(self.device):
@@ -323,7 +498,14 @@ class GAIfO_EQL(RewardLearner):
                 return self.disc.compute_reward(inputs)
     @staticmethod
     def get_argument(parser=None):
-        """Add this component's command-line options and return the argument parser."""
+        """Add this component's command-line options and return the argument parser.
+
+        Args:
+            parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+        Returns:
+            argparse.ArgumentParser: Parser extended with the supported component options.
+        """
         parser = RewardLearner.get_argument(parser)
         parser.add_argument('--update-delay', type=int, default=3,
                             help='Discriminator training delay.  <default: %(default)s>')

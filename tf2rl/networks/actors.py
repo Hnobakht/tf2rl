@@ -22,6 +22,23 @@ class GaussianActor(tf.keras.Model):
                  initializer = tf.keras.initializers.glorot_uniform()):
         """Build Gaussian action heads and configure action scaling, standard deviations, and
         squashing.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            max_action (float): Symmetric continuous-action bound or output scale.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            hidden_activation (str or callable): Activation used by hidden layers.
+            state_independent_std (bool): Learn a global Gaussian log standard deviation instead of
+                predicting it from each state.
+            squash (bool): Apply tanh to Gaussian samples before multiplying by max_action.
+            name (str): Name assigned to the model, operation, or registered component.
+            initializer (str or keras.initializers.Initializer): Initializer used to create network
+                kernels.
+
+        Returns:
+            None: Initializes the instance.
         """
         super().__init__(name=name)
 
@@ -49,16 +66,15 @@ class GaussianActor(tf.keras.Model):
         self._max_action = max_action
 
     def _compute_dist(self, states):
-        """
+        """Predict the means and clipped log standard deviations of the unsquashed Gaussian
+        policy.
 
         Args:
-            states: np.ndarray or tf.Tensor
-                Inputs to neural network.
+            states (array_like): Observation batch shaped (batch, *state_shape).
 
         Returns:
-            tfp.distributions.MultivariateNormalDiag
-                Multivariate normal distribution object whose mean and
-                standard deviation is output of a neural network
+            tfp.distributions.MultivariateNormalDiag: Unsquashed diagonal Gaussian over action
+                coordinates for each state.
         """
         features = states
 
@@ -78,8 +94,19 @@ class GaussianActor(tf.keras.Model):
         return tfp.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.exp(log_std))
 
     def call(self, states, training=None, test=False):
-        """
-        Compute actions and log probabilities of the selected action
+        """Compute actions and log probabilities of the selected action
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default. This implementation does not read this argument.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Scaled actions shaped (batch, action_dim) and log densities
+                shaped (batch,). Tanh correction is applied when squash is enabled; the constant
+                max_action density Jacobian is omitted.
         """
         dist = self._compute_dist(states)
         # Training passes a Python bool: avoid differentiating an unused tf.cond
@@ -107,6 +134,15 @@ class GaussianActor(tf.keras.Model):
         Divide out the action scale and invert tanh when enabled. Clipping
         makes the inverse finite at numerical saturation; the density there is
         an approximation. The constant scale Jacobian remains omitted.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+
+        Returns:
+            tf.Tensor: Supplied-action log densities of shape (batch,), with tanh correction when
+                enabled and without the constant max_action Jacobian.
         """
         raw_actions = actions / self._max_action
         dist = self._compute_dist(states)
@@ -122,6 +158,13 @@ class GaussianActor(tf.keras.Model):
 
         This analytic quantity is not the entropy of a squashed policy; SAC
         instead uses sampled, Jacobian-corrected log densities in its loss.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: Unsquashed Gaussian entropy for each state, shaped (batch,); this is not the
+                entropy after tanh/action scaling.
         """
         return self._compute_dist(states).entropy()
 
@@ -136,7 +179,28 @@ class GaussianActor_pixels(tf.keras.Model):
                  squash=False, name='gaussian_policy',
                  initializer=tf.keras.initializers.glorot_uniform(),
                  is_pixel=False):
-        """Build image features and Gaussian action heads with optional action squashing."""
+        """Build image features and Gaussian action heads with optional action squashing.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis. This
+                implementation does not read this argument.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            max_action (float): Symmetric continuous-action bound or output scale.
+            units (sequence[int]): Hidden-layer widths in forward order. This implementation does not
+                read this argument.
+            hidden_activation (str or callable): Activation used by hidden layers.
+            state_independent_std (bool): Learn a global Gaussian log standard deviation instead of
+                predicting it from each state.
+            squash (bool): Apply tanh to Gaussian samples before multiplying by max_action.
+            name (str): Name assigned to the model, operation, or registered component.
+            initializer (str or keras.initializers.Initializer): Initializer used to create network
+                kernels.
+            is_pixel (bool): Historical pixel-model option retained by this constructor. This
+                implementation does not read this argument.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
 
         layers = tf.keras.layers
@@ -167,16 +231,17 @@ class GaussianActor_pixels(tf.keras.Model):
         self._max_action = max_action
 
     def _compute_dist(self, states, training):
-        """
+        """Encode image states and predict the corresponding diagonal Gaussian action
+        distribution.
 
         Args:
-            states: np.ndarray or tf.Tensor
-                Inputs to neural network.
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
 
         Returns:
-            tfp.distributions.MultivariateNormalDiag
-                Multivariate normal distribution object whose mean and
-                standard deviation is output of a neural network
+            tfp.distributions.MultivariateNormalDiag: Diagonal Gaussian over action coordinates
+                conditioned on encoded images.
         """
         features = tf.cast(states/255, dtype=tf.float32)
         print("[DEBUG] input: " + str(features.shape) + " [_compute_dist call GaussianActor_pixels]")
@@ -198,8 +263,18 @@ class GaussianActor_pixels(tf.keras.Model):
         return tfp.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.exp(log_std))
 
     def call(self, states, training=None, test=False):
-        """
-        Compute actions and log probabilities of the selected action
+        """Compute actions and log probabilities of the selected action
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            training (bool or tf.Tensor or None): Keras training flag controlling stochastic or stateful
+                layers; None follows the layer default.
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Scaled action samples and associated log densities, shaped
+                (batch, action_dim) and (batch,).
         """
         dist = self._compute_dist(states, training)
         raw_actions = tf.cond(tf.cast(test, tf.bool), dist.mean, dist.sample)
@@ -225,7 +300,18 @@ class CategoricalActor(tf.keras.Model):
     """Neural policy representing a categorical distribution over discrete actions."""
     def __init__(self, state_shape, action_dim, units=(256, 256),
                  hidden_activation="relu", name="CategoricalActor"):
-        """Build hidden features and the categorical action-probability head."""
+        """Build hidden features and the categorical action-probability head.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            units (sequence[int]): Hidden-layer widths in forward order.
+            hidden_activation (str or callable): Activation used by hidden layers.
+            name (str): Name assigned to the model, operation, or registered component.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name)
         self.action_dim = action_dim
 
@@ -241,7 +327,14 @@ class CategoricalActor(tf.keras.Model):
             np.zeros(shape=(1,)+state_shape, dtype=np.float32)))
 
     def _compute_features(self, states):
-        """Transform a batch of observations into policy features."""
+        """Transform a batch of observations into policy features.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: Hidden state features shaped (batch, last_hidden_width).
+        """
         features = states
 
         for cur_layer in self.base_layers:
@@ -250,16 +343,13 @@ class CategoricalActor(tf.keras.Model):
         return features
 
     def _compute_dist(self, states):
-        """
+        """Map state features to a categorical distribution over discrete action indices.
 
         Args:
-            states: np.ndarray or tf.Tensor
-                Inputs to neural network.
+            states (array_like): Observation batch shaped (batch, *state_shape).
 
         Returns:
-            tfp.distributions.Categorical
-                Categorical distribution whose probabilities are
-                computed using softmax activation of a neural network
+            tfp.distributions.Categorical: Per-state distribution over discrete action indices.
         """
         features = self._compute_features(states)
 
@@ -269,12 +359,30 @@ class CategoricalActor(tf.keras.Model):
         return dist
 
     def compute_prob(self, states):
-        """Return the categorical distribution logits for a batch of states."""
+        """Return the categorical distribution logits for a batch of states.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: The categorical distribution logits returned by dist.logits, shaped (batch,
+                action_dim); the method does not exponentiate them.
+        """
         dist = self._compute_dist(states)
         return dist.logits
 
     def call(self, states, test=False):
-        """Return actions and log probabilities; use greedy actions in test mode."""
+        """Return actions and log probabilities; use greedy actions in test mode.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor]: Discrete action indices and their log probabilities, both
+                shaped (batch,). test=True uses the most likely action.
+        """
         dist = self._compute_dist(states)
 
         if test:
@@ -286,7 +394,14 @@ class CategoricalActor(tf.keras.Model):
         return action, log_prob
 
     def compute_entropy(self, states):
-        """Return the action distribution entropy for each observation."""
+        """Return the action distribution entropy for each observation.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+
+        Returns:
+            tf.Tensor: Categorical policy entropy for each state, shaped (batch,).
+        """
         dist = self._compute_dist(states)
         return dist.entropy()
 
@@ -294,14 +409,12 @@ class CategoricalActor(tf.keras.Model):
         """Compute log probabilities of state-action pairs
 
         Args:
-            states: tf.Tensor
-                Tensors of inputs to NN
-            actions: tf.Tensor
-                Tensors of NOT one-hot vector.
-                They will be converted to one-hot vector inside this function.
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
 
         Returns:
-            Log probabilities
+            tf.Tensor: Log probabilities of the supplied discrete actions, shaped (batch,).
         """
         dist = self._compute_dist(states)
         return dist.log_prob(actions)
@@ -310,13 +423,32 @@ class CategoricalActor(tf.keras.Model):
 class CategoricalActorCritic(CategoricalActor):
     """Categorical policy with a state-value head for actor-critic training."""
     def __init__(self, *args, **kwargs):
-        """Create the categorical policy and its additional state-value head."""
+        """Create the categorical policy and its additional state-value head.
+
+        Args:
+            *args (tuple): Positional arguments forwarded to CategoricalActor construction.
+            **kwargs (dict): Additional keyword arguments forwarded to CategoricalActor construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         tf.keras.Model.__init__(self)
         self.v = Dense(1, activation="linear")
         super().__init__(*args, **kwargs)
 
     def call(self, states, test=False):
-        """Return actions and log probabilities, plus state values; use greedy actions in test mode.
+        """Return actions and log probabilities, plus state values; use greedy actions in test
+        mode.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            test (bool or tf.Tensor): Select the policy evaluation action rule, such as Gaussian mean,
+                categorical mode, or greedy Q action.
+
+        Returns:
+            tuple[tf.Tensor, tf.Tensor, tf.Tensor]: Action indices, action probabilities, and state
+                values, each shaped (batch,). The second output uses dist.prob, despite the local
+                log_prob variable name.
         """
         features = self._compute_feature(states)
         probs = self.out_prob(features)

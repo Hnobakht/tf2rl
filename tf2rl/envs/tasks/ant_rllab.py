@@ -4,7 +4,15 @@ from tf2rl.envs.tasks import research_mujoco as mujoco_env
 from tf2rl.envs.dynamic_mjc.model_builder import  MJCModel
 
 def ant_env(gear=150, eyes=True):
-    """Build the configurable ant MuJoCo model."""
+    """Build the configurable ant MuJoCo model.
+
+    Args:
+        gear (float): Actuator gear ratio written into the Ant MJCF model.
+        eyes (bool): Include eye geometry in the generated Ant model.
+
+    Returns:
+        MJCModel: Dynamically generated Ant MJCF builder with the requested actuator configuration.
+    """
     mjcmodel = MJCModel('ant_maze')
     mjcmodel.root.compiler(inertiafromgeom="true", angle="degree", coordinate="local")
     mjcmodel.root.option(timestep="0.01", integrator="RK4")
@@ -90,7 +98,14 @@ def ant_env(gear=150, eyes=True):
 
 
 def angry_ant_crippled(gear=150):
-    """Build the ant model with selected legs disabled."""
+    """Build the ant model with selected legs disabled.
+
+    Args:
+        gear (float): Actuator gear ratio written into the Ant MJCF model.
+
+    Returns:
+        MJCModel: Dynamically generated Ant MJCF builder with the requested actuator configuration.
+    """
     mjcmodel = MJCModel('ant_maze')
     mjcmodel.root.compiler(inertiafromgeom="true", angle="degree", coordinate="local")
     mjcmodel.root.option(timestep="0.01", integrator="RK4")
@@ -197,7 +212,18 @@ class AntEnvRLLAB(mujoco_env.MujocoEnv, utils.EzPickle):
     A modified ant env with lower joint gear ratios so it flips less often and learns faster.
     """
     def __init__(self, max_timesteps=1000, disabled=False, gear=30, rotation=True, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            max_timesteps (int): Internal Ant episode horizon before time-limit truncation.
+            disabled (bool): Select the disabled-limb Ant model.
+            gear (float): Actuator gear ratio written into the Ant MJCF model.
+            rotation (bool): Enable the Ant task rotation-related reward convention.
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            None: Initializes the instance.
+        """
         utils.EzPickle.__init__(self)
         self.timesteps = 0
         self.max_timesteps=max_timesteps
@@ -212,6 +238,14 @@ class AntEnvRLLAB(mujoco_env.MujocoEnv, utils.EzPickle):
     def step(self, a):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            a (np.ndarray): Continuous control vector in the task action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. The task internal horizon is reported as truncation; terminated is
+                always False.
         """
         if self.rotation:
             vel = self.data.qvel.flat[5]
@@ -240,7 +274,12 @@ class AntEnvRLLAB(mujoco_env.MujocoEnv, utils.EzPickle):
             reward_flipped=flipped_rew)
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         return np.concatenate([
             self.data.qpos.flat[2:],
             # self.model.data.qvel.flat,
@@ -249,7 +288,12 @@ class AntEnvRLLAB(mujoco_env.MujocoEnv, utils.EzPickle):
         ])
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         self.timesteps = 0
         qpos = self.init_qpos + self.np_random.uniform(size=self.model.nq, low=-.1, high=.1)
         qvel = self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
@@ -257,5 +301,9 @@ class AntEnvRLLAB(mujoco_env.MujocoEnv, utils.EzPickle):
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         self.viewer.cam.distance = self.model.stat.extent * 0.5

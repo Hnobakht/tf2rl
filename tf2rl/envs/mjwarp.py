@@ -15,7 +15,17 @@ from gymnasium.vector.utils import batch_space
 
 
 def as_warp(value, device):
-    """Import eager TensorFlow actions without a host copy, or upload NumPy actions."""
+    """Import eager TensorFlow actions without a host copy, or upload NumPy actions.
+
+    Args:
+        value (wp.array or np.ndarray or tf.Tensor): Per-world controls; NumPy values are uploaded
+            as float32, while Warp/tensor inputs must already expose compatible float32 storage.
+        device (str): TensorFlow or Warp device identifier appropriate to this operation.
+
+    Returns:
+        wp.array: Contiguous float32 Warp array on the selected device, using DLPack for tensor
+            inputs where supported.
+    """
     if isinstance(value, wp.array):
         result = value
     elif isinstance(value, np.ndarray):
@@ -37,7 +47,18 @@ def as_warp(value, device):
 
 
 def export_arrays(arrays, tensors, device):
-    """Export owned snapshots so later simulator steps cannot overwrite rollouts."""
+    """Export owned snapshots so later simulator steps cannot overwrite rollouts.
+
+    Args:
+        arrays (sequence[wp.array]): Simulator buffers to snapshot and export.
+        tensors (bool): Export observations and step results as TensorFlow tensors instead of NumPy
+            arrays.
+        device (str): TensorFlow or Warp device identifier appropriate to this operation.
+
+    Returns:
+        tuple: NumPy copies or TensorFlow tensor snapshots, in the same order as arrays. Device
+            buffers are copied before exposing tensors.
+    """
     if not tensors:
         return tuple(array.numpy() for array in arrays)
     import tensorflow as tf
@@ -52,6 +73,24 @@ class MJWarpSimulator:
     """CUDA physics for arbitrary MuJoCo models, independent of reward and policy."""
 
     def __init__(self, model, num_envs=1, frame_skip=1, device="cuda:0", nconmax=64, njmax=128):
+        """Initialize MJWarpSimulator and its configuration.
+
+        Args:
+            model (mujoco.MjModel): Compiled single-world MuJoCo model to transfer to the batched Warp
+                simulator.
+            num_envs (int): Number of independent simulation worlds.
+            frame_skip (int): Number of physics integration steps advanced for each environment step.
+            device (str): TensorFlow or Warp device identifier appropriate to this operation.
+            nconmax (int): Allocated per-backend contact-buffer capacity.
+            njmax (int): Allocated per-backend constraint-buffer capacity.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            ValueError: Simulation sizes must be positive. The MJWarp backend requires an NVIDIA CUDA
+                device.
+        """
         if min(num_envs, frame_skip, nconmax, njmax) < 1:
             raise ValueError("Simulation sizes must be positive")
         wp.init()
@@ -72,12 +111,28 @@ class MJWarpSimulator:
             mjw.reset_data(self.model, self.data)
 
     def advance(self):
-        """Launch physics kernels; also usable inside a larger CUDA graph capture."""
+        """Launch physics kernels; also usable inside a larger CUDA graph capture.
+
+        Returns:
+            None.
+        """
         for _ in range(self.frame_skip):
             mjw.step(self.model, self.data)
 
     def step(self, actions):
-        """Set controls and advance all worlds; return the mutable MJWarp Data."""
+        """Set controls and advance all worlds; return the mutable MJWarp Data.
+
+        Args:
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+
+        Returns:
+            mujoco_warp.Data: Mutable simulator data after assigning controls and advancing frame_skip
+                physics steps.
+
+        Raises:
+            ValueError: Action shape must be (num_envs, model.nu).
+        """
         with wp.ScopedDevice(self.device):
             source = as_warp(actions, self.device)
             if source.shape != (self.num_envs, self.host_model.nu):
@@ -87,16 +142,35 @@ class MJWarpSimulator:
             return self.data
 
     def reset(self, mask=None):
-        """Reset all worlds or a per-world Warp mask, retaining allocated buffers."""
+        """Reset all worlds or a per-world Warp mask, retaining allocated buffers.
+
+        Args:
+            mask (wp.array[int] or None): Per-world reset selection; None resets all simulator worlds.
+
+        Returns:
+            None.
+        """
         with wp.ScopedDevice(self.device):
             mjw.reset_data(self.model, self.data, reset=mask)
 
     def check_overflow(self):
-        """Check contact/constraint capacity at rollout boundaries."""
+        """Check contact/constraint capacity at rollout boundaries.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError: MJWarp buffer overflow: increase nconmax/njmax.
+        """
         if np.any(self.data.overflow.numpy()):
             raise RuntimeError("MJWarp buffer overflow: increase nconmax/njmax")
 
     def close(self):
+        """Synchronize pending Warp device work before the simulator is released.
+
+        Returns:
+            None.
+        """
         wp.synchronize_device(self.device)
 
 
@@ -104,6 +178,19 @@ class MJWarpSimulator:
 def _clip_actions(
     actions: wp.array2d[float], low: wp.array[float], high: wp.array[float], ctrl: wp.array2d[float]
 ):
+    """Clip per-world actions to actuator bounds and write the simulator control buffer.
+
+    Args:
+        actions (array_like): Actions aligned with the observation batch; continuous actions have a
+            final action_dim axis.
+        low (array_like): Lower continuous-action bounds, one per actuator.
+        high (array_like): Upper continuous-action bounds, one per actuator.
+        ctrl (array_like): Actuator controls; Warp kernels write their clipped controls into this
+            buffer.
+
+    Returns:
+        None.
+    """
     world, actuator = wp.tid()
     ctrl[world, actuator] = wp.clamp(actions[world, actuator], low[actuator], high[actuator])
 
@@ -116,6 +203,20 @@ def _boundaries(
     truncated: wp.array[int],
     reset: wp.array[int],
 ):
+    """Advance episode lengths and write time-limit and autoreset masks for each world.
+
+    Args:
+        terminated (wp.array[int]): Per-world true-termination flags, read by boundary handling or
+            written by reward kernels.
+        steps (wp.array[int]): Per-world episode step counters incremented in place.
+        limit (int): Maximum episode length used to set truncation flags.
+        truncated (wp.array[int]): Output per-world time-limit flags written in place by the
+            boundary kernel.
+        reset (wp.array[int]): Output reset mask set for terminated or truncated worlds.
+
+    Returns:
+        None.
+    """
     world = wp.tid()
     steps[world] += 1
     truncated[world] = wp.int32(steps[world] >= limit)
@@ -151,6 +252,31 @@ class MJWarpVectorEnv(gym.vector.VectorEnv):
         njmax=128,
         **env_kwargs,
     ):
+        """Initialize MJWarpVectorEnv and its configuration.
+
+        Args:
+            env_id (str): Registered Gymnasium environment identifier.
+            num_envs (int): Number of independent simulation worlds.
+            task (object or None): Task adapter supplying observation, reward, termination, and reset
+                kernels.
+            tensors (bool): Export observations and step results as TensorFlow tensors instead of NumPy
+                arrays.
+            seed (int or None): Random seed; None leaves initialization to the underlying random
+                generator.
+            device (str): TensorFlow or Warp device identifier appropriate to this operation.
+            nconmax (int): Allocated per-backend contact-buffer capacity.
+            njmax (int): Allocated per-backend constraint-buffer capacity.
+            **env_kwargs (dict): Additional keyword arguments forwarded to gym.vector.VectorEnv
+                construction.
+
+        Returns:
+            None: Initializes the instance.
+
+        Raises:
+            TypeError: The MJWarp backend requires a MuJoCo environment. The MJWarp backend requires Box
+                controls.
+            ValueError: Specify max_episode_steps for the vector environment.
+        """
         from tf2rl.envs.mjwarp_tasks import get_mjwarp_task
 
         self.num_envs = num_envs
@@ -207,6 +333,12 @@ class MJWarpVectorEnv(gym.vector.VectorEnv):
             raise
 
     def _advance(self):
+        """Advance batched physics through the simulator, using captured execution when
+        available.
+
+        Returns:
+            None.
+        """
         sim = self.sim
         wp.launch(
             _clip_actions,
@@ -232,6 +364,22 @@ class MJWarpVectorEnv(gym.vector.VectorEnv):
         self.task.observe(sim, self._obs)
 
     def reset(self, *, seed=None, options=None):
+        """Reset every world, optional per-world seeds, and episode counters, then produce
+        initial observations.
+
+        Args:
+            seed (int or None): Random seed; None leaves initialization to the underlying random
+                generator.
+            options (dict or None): Additional reset settings accepted by the underlying environment.
+
+        Returns:
+            tuple: Initial observations shaped (num_envs, observation_width) and an empty info
+                dictionary; observation type follows tensors.
+
+        Raises:
+            ValueError: MJWarp reset does not support reset options. A seed list must have num_envs
+                entries.
+        """
         if options:
             raise ValueError("MJWarp reset does not support reset options")
         with wp.ScopedDevice(self.sim.device):
@@ -255,6 +403,18 @@ class MJWarpVectorEnv(gym.vector.VectorEnv):
             return export_arrays([self._obs], self.tensors, self.sim.device)[0], {}
 
     def step(self, actions):
+        """Advance all worlds, snapshot physical outcomes, and autoreset completed episodes
+        before returning observations.
+
+        Args:
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+
+        Returns:
+            tuple: Observations, rewards, terminated, truncated, and info. Observation rows autoreset
+                immediately; info["final_obs"] preserves physical successors and info["_final_obs"]
+                marks episode boundaries. Array/tensor types follow tensors.
+        """
         with wp.ScopedDevice(self.sim.device):
             source = as_warp(actions, self.sim.device)
             if source.shape != self._actions.shape:
@@ -284,8 +444,21 @@ class MJWarpVectorEnv(gym.vector.VectorEnv):
         return obs, reward, terminated, truncated, {"final_obs": final, "_final_obs": reset}
 
     def check_overflow(self):
+        """Delegate contact/constraint capacity checks to the simulator.
+
+        Returns:
+            None.
+        """
         self.sim.check_overflow()
 
     def close_extras(self, **kwargs):
+        """Close the simulator by synchronizing its pending device work.
+
+        Args:
+            **kwargs (dict): Additional compatibility keyword options, currently unused.
+
+        Returns:
+            None.
+        """
         self.sim.close()
         self._reference.close()

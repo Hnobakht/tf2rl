@@ -7,11 +7,28 @@ from tf2rl.utils.tensorflow import update_target_variables
 class Discriminator_EQL_WAIL(Discriminator_EQL):
     """Equation discriminator with a Wasserstein-style raw reward output."""
     def __init__(self, **kwargs):
-        """Configure the equation discriminator for a raw Wasserstein-style output."""
+        """Configure the equation discriminator for a raw Wasserstein-style output.
+
+        Args:
+            **kwargs (dict): Additional keyword arguments forwarded to Discriminator_EQL construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(**kwargs)
 
     def compute_reward(self, inputs, l1_regularizers = 0):
-        """Return the raw equation discriminator output in inference mode."""
+        """Return the raw equation discriminator output in inference mode.
+
+        Args:
+            inputs (tf.Tensor): Batched discriminator inputs with concatenated state/action or
+                state/successor coordinates as required by the model.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it.
+
+        Returns:
+            tf.Tensor: Raw Wasserstein equation-critic scores shaped (batch, 1).
+        """
         print("[DEBUG] initializing [compute_reward WAIL_EQL] shape: {} name: {}".format(inputs.shape, self.name))
         return self(inputs, training=False, l1_regularizers=l1_regularizers)
 
@@ -24,12 +41,27 @@ class WAIL_EQL(GAIL_EQL):
             name="WAIL_EQL",
             grad_penalty_coeff=10,
             **kwargs):
-        """Configure the imitation objective, discriminator networks, and optimizer settings."""
+        """Configure the imitation objective, discriminator networks, and optimizer settings.
+
+        Args:
+            state_shape (tuple[int, ...]): Shape of one observation, excluding the batch axis.
+            action_dim (int): Number of discrete choices or width of a continuous action vector.
+            name (str): Name assigned to the model, operation, or registered component.
+            grad_penalty_coeff (float): Coefficient multiplying the discriminator gradient penalty.
+            **kwargs (dict): Additional keyword arguments forwarded to GAIL_EQL construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(state_shape=state_shape, action_dim=action_dim, name=name, **kwargs)
         self.grad_penalty_coeff = grad_penalty_coeff #if grad_penalty_coeff > 0 else None
 
     def _init(self):
-        """Create the discriminator copies and initialize their parameters."""
+        """Create the discriminator copies and initialize their parameters.
+
+        Returns:
+            None.
+        """
         self.disc = Discriminator_EQL_WAIL(state_shape=self.state_shape, action_dim=self.action_dim, v=self.v, drop_out=self.drop_out,
                                           num_layers=self.num_layers, enable_sn=self.enable_sn, constraint=None,
                                           name="Discriminator", lmbda=self.lmbda, exclude = self.exclude,
@@ -48,7 +80,18 @@ class WAIL_EQL(GAIL_EQL):
 
     @tf.function
     def _compute_js_divergence(self, fake_logits, real_logits):
-        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs."""
+        """Return the historical Jensen-Shannon diagnostic for agent and expert outputs.
+
+        Args:
+            fake_logits (tf.Tensor): Agent discriminator outputs used directly in the probability-based
+                divergence calculation.
+            real_logits (tf.Tensor): Expert discriminator outputs used directly in the probability-based
+                divergence calculation.
+
+        Returns:
+            tf.Tensor: Scalar stabilized probability-based Jensen-Shannon diagnostic between agent and
+                expert outputs.
+        """
         print("[DEBUG] initializing [_compute_js_divergence WAIL_EQL] shape: {TODO}")
         m = (fake_logits + real_logits) / 2.
         return tf.reduce_mean((
@@ -57,8 +100,20 @@ class WAIL_EQL(GAIL_EQL):
 
     @tf.function
     def _train_body(self, agent_states, agent_acts, expert_states, expert_acts, l1_regularizers):
-        """
-        Apply discriminator gradients for the expert and agent batches and return training metrics.
+        """Apply discriminator gradients for the expert and agent batches and return training
+        metrics.
+
+        Args:
+            agent_states (array_like): Agent observation batch shaped (agent_batch, *state_shape).
+            agent_acts (array_like): Agent actions aligned with agent_states.
+            expert_states (array_like): Expert observation batch shaped (expert_batch, *state_shape).
+            expert_acts (array_like): Expert actions aligned with expert_states.
+            l1_regularizers (float): Historical per-call L1 coefficient; some modern equation paths
+                retain but ignore it.
+
+        Returns:
+            tuple: Total critic loss, accuracy, JS diagnostic, and discriminator gradient tensors after
+                applying the Wasserstein update.
         """
         print("[DEBUG] initializing [_train_body WAIL_EQL] shape: {TODO}")
         epsilon = 1e-8

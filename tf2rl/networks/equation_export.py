@@ -15,6 +15,14 @@ def expression_statistics(graph, output='raw_output'):
 
     The default measures the learned logit/reward before GAIL's fixed sigmoid and
     log-odds transformation, so those operations do not obscure model complexity.
+
+    Args:
+        graph (dict): Exported equation graph containing inputs, nodes, named outputs, and metadata.
+        output (str): Named equation output selected for statistics or formatting.
+
+    Returns:
+        dict: Reachable operation/nonlinearity counts, referenced input names, and nonzero affine
+            coefficient count for the selected output.
     """
     reachable = {graph['outputs'][output]}
     for index in reversed(range(len(graph['nodes']))):
@@ -32,7 +40,20 @@ def expression_statistics(graph, output='raw_output'):
 
 
 def evaluate_equation(graph, inputs):
-    """Evaluate a version-1 graph on a batch of observations (and actions)."""
+    """Evaluate a version-1 graph on a batch of observations (and actions).
+
+    Args:
+        graph (dict): Exported equation graph containing inputs, nodes, named outputs, and metadata.
+        inputs (np.ndarray): Input coordinates shaped (batch, len(graph["inputs"])).
+
+    Returns:
+        dict[str, np.ndarray]: Exported output names mapped to float predictions shaped (batch, 1),
+            evaluated without TensorFlow.
+
+    Raises:
+        ValueError: Unsupported equation graph version. Expected a batch with one column per named
+            input.
+    """
     if graph['version'] != 1:
         raise ValueError('Unsupported equation graph version')
     inputs = np.asarray(inputs, dtype=np.float32)
@@ -84,13 +105,29 @@ _EVALUATOR_SOURCE = inspect.getsource(evaluate_equation)
 class _Graph:
     """Build a deduplicated inference graph with constant folding and unreachable-node removal."""
     def __init__(self, inputs):
-        """Initialize named inputs, graph nodes, and the deduplication cache."""
+        """Initialize named inputs, graph nodes, and the deduplication cache.
+
+        Args:
+            inputs (sequence[str]): Names of the graph input coordinates in index order.
+
+        Returns:
+            None: Initializes the instance.
+        """
         self.inputs = inputs
         self.nodes = []
         self.cache = {}
 
     def add(self, op, args=(), **attributes):
-        """Return a deduplicated graph-node index, folding constant-only operations."""
+        """Return a deduplicated graph-node index, folding constant-only operations.
+
+        Args:
+            op (str): Equation-node operator identifier.
+            args (sequence[int]): Input node indices for the graph operation, in operand order.
+            **attributes (dict): Operator-specific node fields, such as value, weights, or bias.
+
+        Returns:
+            int: Deduplicated graph-node index, with supported constant operations folded immediately.
+        """
         node = dict(op=op, **attributes)
         if args:
             node['args'] = list(args)
@@ -106,12 +143,28 @@ class _Graph:
         return self.cache[key]
 
     def constant(self, value):
-        """Return a deduplicated constant node using float32 precision."""
+        """Return a deduplicated constant node using float32 precision.
+
+        Args:
+            value (float): Finite constant value to store with float32 rounding.
+
+        Returns:
+            int: Deduplicated node index storing the value rounded to float32.
+        """
         return self.add('constant', value=float(np.float32(value)))
 
     def affine(self, inputs, weights, bias):
-        """
-        Add an affine expression, omitting zero weights and simplifying constant or identity terms.
+        """Add an affine expression, omitting zero weights and simplifying constant or identity
+        terms.
+
+        Args:
+            inputs (sequence[int]): Graph node indices entering the affine combination.
+            weights (sequence[float]): Affine coefficients aligned with the input node indices.
+            bias (float): Constant term in an affine equation node.
+
+        Returns:
+            int: Node index for the simplified affine combination, removing zero coefficients and
+                folding constants.
         """
         selected = [(node, float(weight)) for node, weight in zip(inputs, weights) if weight != 0]
         if not selected:
@@ -122,11 +175,28 @@ class _Graph:
         return self.add('affine', args, weights=weights, bias=float(bias))
 
     def finish(self, outputs, metadata):
-        """Return an export graph containing only nodes reachable from the named outputs."""
+        """Return an export graph containing only nodes reachable from the named outputs.
+
+        Args:
+            outputs (dict[str, int]): Mapping from named equation outputs to graph-node indices.
+            metadata (dict or None): Additional provenance recorded with trajectories or exported
+                equations.
+
+        Returns:
+            dict: Versioned export graph containing only reachable nodes, remapped outputs, input names,
+                and supplied metadata.
+        """
         reachable = set()
 
         def visit(index):
-            """Mark a graph node and its dependencies as reachable."""
+            """Mark a graph node and its dependencies as reachable.
+
+            Args:
+                index (int): Equation graph node index to visit.
+
+            Returns:
+                None.
+            """
             if index not in reachable:
                 reachable.add(index)
                 for parent in self.nodes[index].get('args', []):
@@ -151,6 +221,23 @@ def extract_equation(model, *, reward_kind, input_names=None, metadata=None):
 
     Dropout is inactive at inference. Singular penalties and AIRL's separate dense
     shaping potential are training components and are not part of this expression.
+
+    Args:
+        model (EquationNetwork): Built equation network; effective masked parameters and configured
+            output activation are exported.
+        reward_kind (str): Reward interpretation to export, such as airl or gail.
+        input_names (sequence[str] or None): Names for equation input coordinates; None generates
+            default names.
+        metadata (dict or None): Additional provenance recorded with trajectories or exported
+            equations.
+
+    Returns:
+        dict: Versioned JSON-compatible equation graph with raw output, interpreted reward,
+            effective parameters, and provenance metadata.
+
+    Raises:
+        ValueError: reward_kind must be gail or airl. Input names must be unique and match the
+            network input width.
     """
     if reward_kind not in ('gail', 'airl'):
         raise ValueError('reward_kind must be gail or airl')
@@ -206,7 +293,14 @@ def extract_equation(model, *, reward_kind, input_names=None, metadata=None):
 
 
 def format_equation(graph):
-    """Readable shared expressions; no exponential expansion or coefficient rounding."""
+    """Readable shared expressions; no exponential expansion or coefficient rounding.
+
+    Args:
+        graph (dict): Exported equation graph containing inputs, nodes, named outputs, and metadata.
+
+    Returns:
+        str: Readable assignments and output equations, terminated by a newline.
+    """
     lines = ['# Inference equation; float32 coefficients; dropout disabled.',
              '# Input order: ' + ', '.join(graph['inputs'])]
     for index, node in enumerate(graph['nodes']):
@@ -231,7 +325,16 @@ def format_equation(graph):
 
 
 def save_equation(graph, path):
-    """Write JSON, readable expressions and a standalone NumPy evaluator."""
+    """Write JSON, readable expressions and a standalone NumPy evaluator.
+
+    Args:
+        graph (dict): Exported equation graph containing inputs, nodes, named outputs, and metadata.
+        path (str or Path): Output filename stem; JSON, readable text, and standalone NumPy
+            predictor files are written beside it.
+
+    Returns:
+        None.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.with_suffix('.json').write_text(json.dumps(graph, indent=2, allow_nan=False) + '\n')

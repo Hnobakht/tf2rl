@@ -14,7 +14,14 @@ import numpy as np
 
 
 def _vector(value):
-    """Parse the simple numeric expressions used by the legacy MuJoCo assets."""
+    """Parse the simple numeric expressions used by the legacy MuJoCo assets.
+
+    Args:
+        value (str): Whitespace-separated MJCF vector attribute to parse or format.
+
+    Returns:
+        np.ndarray: Parsed whitespace-separated coordinates as a float64 vector.
+    """
     values = []
     for token in value.split():
         factors = token.split("/")
@@ -26,7 +33,16 @@ def _vector(value):
 
 
 def _format_vector(value):
-    """Serialize numeric vector entries as space-separated MJCF values."""
+    """Serialize numeric vector entries as space-separated MJCF values.
+
+    Args:
+        value (array_like): Numeric vector converted to a whitespace-separated MJCF attribute
+            string.
+
+    Returns:
+        str: Whitespace-separated numeric coordinates with sufficient precision for MJCF
+            serialization.
+    """
     return " ".join(f"{number:.17g}" for number in value)
 
 
@@ -37,6 +53,12 @@ def _convert_global_coordinates(xml):
     removed ``coordinate=global`` compiler mode.  Their body frames have no
     rotations, so the old compiler conversion is exactly a parent-origin
     subtraction for positions and ``fromto`` endpoints.
+
+    Args:
+        xml (xml.etree.ElementTree.Element): Parsed MJCF tree modified in place.
+
+    Returns:
+        None.
     """
     compiler = xml.find("compiler")
     if compiler is None or compiler.attrib.get("coordinate", "local") != "global":
@@ -44,7 +66,16 @@ def _convert_global_coordinates(xml):
     compiler.attrib.pop("coordinate")
 
     def convert_element(element, origin):
-        """Convert an element's position and segment endpoints relative to the body origin."""
+        """Convert an element's position and segment endpoints relative to the body origin.
+
+        Args:
+            element (xml.etree.ElementTree.Element): MJCF element whose coordinate attributes are
+                converted in place.
+            origin (np.ndarray): Parent-frame translation subtracted from element coordinates.
+
+        Returns:
+            None.
+        """
         if "pos" in element.attrib:
             element.attrib["pos"] = _format_vector(_vector(element.attrib["pos"]) - origin)
         if "fromto" in element.attrib:
@@ -52,7 +83,19 @@ def _convert_global_coordinates(xml):
             element.attrib["fromto"] = _format_vector(endpoints.reshape(-1))
 
     def convert_body(body, parent_origin):
-        """Convert an unrotated body and its descendants from global to local coordinates."""
+        """Convert an unrotated body and its descendants from global to local coordinates.
+
+        Args:
+            body (xml.etree.ElementTree.Element): MJCF body whose subtree coordinates are converted in
+                place.
+            parent_origin (np.ndarray): Parent body origin expressed in the original global frame.
+
+        Returns:
+            None.
+
+        Raises:
+            ValueError: Global-coordinate conversion only supports unrotated body frames.
+        """
         if {'quat', 'euler', 'axisangle', 'xyaxes', 'zaxis'} & body.attrib.keys():
             raise ValueError('Global-coordinate conversion only supports unrotated body frames')
         body_origin = _vector(body.attrib.get("pos", "0 0 0"))
@@ -76,7 +119,17 @@ def _convert_global_coordinates(xml):
 class MujocoEnv(GymnasiumMujocoEnv):
     """Run historical research task definitions on the native Gymnasium MuJoCo backend."""
     def __init__(self, model_path, frame_skip, render_mode=None, **kwargs):
-        """Convert research XML and initialize the simulator, rendering mode, and observation space.
+        """Convert research XML and initialize the simulator, rendering mode, and observation
+        space.
+
+        Args:
+            model_path (str or Path or MJCModel): MJCF filename or dynamically generated research model.
+            frame_skip (int): Number of physics integration steps advanced for each environment step.
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+            **kwargs (dict): Additional keyword arguments forwarded to GymnasiumMujocoEnv construction.
+
+        Returns:
+            None: Initializes the instance.
         """
         if hasattr(model_path, "root"):
             stream = io.StringIO()
@@ -103,14 +156,28 @@ class MujocoEnv(GymnasiumMujocoEnv):
         self.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=obs.shape, dtype=obs.dtype)
 
     def _initialize_simulation(self):
-        """Build the MuJoCo model and data from the converted research XML."""
+        """Build the MuJoCo model and data from the converted research XML.
+
+        Returns:
+            tuple[mujoco.MjModel, mujoco.MjData]: Loaded modern MuJoCo model and allocated mutable
+                simulation state.
+        """
         model = mujoco.MjModel.from_xml_string(self._research_xml)
         data = mujoco.MjData(model)
         mujoco.mj_forward(model, data)
         return model, data
 
     def do_simulation(self, ctrl, n_frames):
-        """Advance MuJoCo by the requested frames and render in human mode."""
+        """Advance MuJoCo by the requested frames and render in human mode.
+
+        Args:
+            ctrl (array_like): Actuator controls; Warp kernels write their clipped controls into this
+                buffer.
+            n_frames (int): Number of MuJoCo integration steps to execute.
+
+        Returns:
+            None.
+        """
         super().do_simulation(ctrl, n_frames)
         if self.render_mode == "human":
             self.render()

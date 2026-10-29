@@ -6,6 +6,15 @@ def CNN_model(hidden_activation='relu', initializer='glorot_uniform'):
     Wrap the returned list in ``tf.keras.Sequential`` or apply it in order.
     The final feature width is 512; callers supply any task-specific head and
     image normalization. This helper does not construct a policy by itself.
+
+    Args:
+        hidden_activation (str or callable): Activation used by hidden layers.
+        initializer (str or keras.initializers.Initializer): Initializer used to create network
+            kernels.
+
+    Returns:
+        list[keras.layers.Layer]: Convolutional feature layers followed by the configured fully
+            connected layers; callers assemble or apply the sequence.
     """
     base_layers = []
     base_layers.append(layers.Conv2D(32, kernel_size=(8, 8), strides=(4,4), padding='same', activation='relu'))

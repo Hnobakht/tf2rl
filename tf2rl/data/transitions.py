@@ -22,6 +22,29 @@ def dac_transitions(
     flag. True termination wins if both flags are set. Truncation alone bootstraps.
     Observations are already augmented by the wrapper. No flags are inferred from
     episode length here; legacy demonstration loading handles that separately.
+
+    Args:
+        env (gym.Env): Environment exposing get_absorbing_state through its wrappers when
+            absorbing=True.
+        obs (array_like): Current observation, or batch of observations with a leading batch axis.
+        action (array_like): Single action in the environment action space.
+        next_obs (array_like): Physical successor observation or observation batch, before episode
+            autoreset.
+        reward (float): Scalar reward of the physical environment transition.
+        terminated (array_like): True MDP termination flags; time-limit truncations must be supplied
+            separately.
+        truncated (array_like): Time-limit or external episode-boundary flags; these stop return
+            recursion but permit value bootstrapping. This implementation does not read this
+            argument.
+        absorbing (bool): Enable DAC absorbing-state transitions and their corresponding
+            interpretation.
+        logp (array_like or None): Action log probability for each transition; also stored on
+            synthetic rows when supplied.
+
+    Returns:
+        list[dict]: One physical transition, plus a zero-action absorbing self-loop after true
+            termination when absorbing is enabled. done stores a DAC mask, not a boolean;
+            truncations stay continuing.
     """
     use_absorbing = absorbing and bool(terminated)
     transition = dict(
@@ -55,6 +78,25 @@ def dac_batch_transitions(env, obs, actions, next_obs, rewards, terminated, *, a
     next_obs must contain final physical observations, never autoreset observations.
     Time-limit truncation is continuing; only true terminations create self-loops.
     Physical rows precede synthetic rows. Added loops do not count as environment steps.
+
+    Args:
+        env (gym.vector.VectorEnv): Vector environment exposing a canonical absorbing observation
+            when absorbing=True.
+        obs (array_like): Current observation, or batch of observations with a leading batch axis.
+        actions (array_like): Actions aligned with the observation batch; continuous actions have a
+            final action_dim axis.
+        next_obs (array_like): Physical successor observation or observation batch, before episode
+            autoreset.
+        rewards (array_like): Rewards aligned with transitions; scalar per-transition values may
+            have a trailing singleton axis.
+        terminated (array_like): True MDP termination flags; time-limit truncations must be supplied
+            separately.
+        absorbing (bool): Enable DAC absorbing-state transitions and their corresponding
+            interpretation.
+
+    Returns:
+        dict[str, np.ndarray]: Replay fields with physical rows followed by any terminal absorbing
+            loops. rew and done have shape (rows, 1); done uses DAC masks (1, 0, -1).
     """
     terminated = np.asarray(terminated, bool).reshape(-1)
     rows = {

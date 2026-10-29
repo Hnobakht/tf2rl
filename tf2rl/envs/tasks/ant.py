@@ -7,13 +7,28 @@ from tf2rl.envs.tasks import research_mujoco as mujoco_env
 class AntEnvDisabled(mujoco_env.MujocoEnv, utils.EzPickle):
     """Ant locomotion task using a model with restricted leg-joint motion."""
     def __init__(self, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            None: Initializes the instance.
+        """
         mujoco_env.MujocoEnv.__init__(self, 'ant_disabled.xml', 5, render_mode=render_mode)
         utils.EzPickle.__init__(self)
 
     def step(self, a):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            a (np.ndarray): Continuous control vector in the task action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. True termination is reported separately; truncation is False and
+                external TimeLimit wrappers enforce the horizon.
         """
         xposbefore = self.get_body_com("torso")[0]
         self.do_simulation(a, self.frame_skip)
@@ -36,7 +51,12 @@ class AntEnvDisabled(mujoco_env.MujocoEnv, utils.EzPickle):
             reward_survive=survive_reward)
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         return np.concatenate([
             self.data.qpos.flat[2:],
             self.data.qvel.flat,
@@ -44,26 +64,50 @@ class AntEnvDisabled(mujoco_env.MujocoEnv, utils.EzPickle):
         ])
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         qpos = self.init_qpos + self.np_random.uniform(size=self.model.nq, low=-.1, high=.1)
         qvel = self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
         self.set_state(qpos, qvel)
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         self.viewer.cam.distance = self.model.stat.extent * 0.5
 
 class AntEnvLonglegs(mujoco_env.MujocoEnv, utils.EzPickle):
     """Ant locomotion task using the longer-leg body model."""
     def __init__(self, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            None: Initializes the instance.
+        """
         mujoco_env.MujocoEnv.__init__(self, 'ant_longlegs.xml', 5, render_mode=render_mode)
         utils.EzPickle.__init__(self)
 
     def step(self, a):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            a (np.ndarray): Continuous control vector in the task action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. True termination is reported separately; truncation is False and
+                external TimeLimit wrappers enforce the horizon.
         """
         xposbefore = self.get_body_com("torso")[0]
         self.do_simulation(a, self.frame_skip)
@@ -86,7 +130,12 @@ class AntEnvLonglegs(mujoco_env.MujocoEnv, utils.EzPickle):
             reward_survive=survive_reward)
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         return np.concatenate([
             self.data.qpos.flat[2:],
             self.data.qvel.flat,
@@ -94,26 +143,50 @@ class AntEnvLonglegs(mujoco_env.MujocoEnv, utils.EzPickle):
         ])
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         qpos = self.init_qpos + self.np_random.uniform(size=self.model.nq, low=-.1, high=.1)
         qvel = self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
         self.set_state(qpos, qvel)
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         self.viewer.cam.distance = self.model.stat.extent * 0.5
 
 class AntEnvDisabled2(mujoco_env.MujocoEnv, utils.EzPickle):
     """Ant locomotion task using the second restricted-joint model variant."""
     def __init__(self, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            None: Initializes the instance.
+        """
         mujoco_env.MujocoEnv.__init__(self, 'ant_disabled_2.xml', 5, render_mode=render_mode)
         utils.EzPickle.__init__(self)
 
     def step(self, a):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            a (np.ndarray): Continuous control vector in the task action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. True termination is reported separately; truncation is False and
+                external TimeLimit wrappers enforce the horizon.
         """
         xposbefore = self.get_body_com("torso")[0]
         self.do_simulation(a, self.frame_skip)
@@ -136,7 +209,12 @@ class AntEnvDisabled2(mujoco_env.MujocoEnv, utils.EzPickle):
             reward_survive=survive_reward)
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         return np.concatenate([
             self.data.qpos.flat[2:],
             self.data.qvel.flat,
@@ -144,20 +222,37 @@ class AntEnvDisabled2(mujoco_env.MujocoEnv, utils.EzPickle):
         ])
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         qpos = self.init_qpos + self.np_random.uniform(size=self.model.nq, low=-.1, high=.1)
         qvel = self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
         self.set_state(qpos, qvel)
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         self.viewer.cam.distance = self.model.stat.extent * 0.5
 
 class AntEnvFullDisabled(mujoco_env.MujocoEnv, utils.EzPickle):
     """Ant locomotion task using the fully restricted-joint model variant."""
     def __init__(self,  ploting=False, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            ploting (bool): Historical task plotting option (spelling retained by the API).
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            None: Initializes the instance.
+        """
         self.ploting = ploting
         if self.ploting:
             self.joints_list = []
@@ -168,6 +263,14 @@ class AntEnvFullDisabled(mujoco_env.MujocoEnv, utils.EzPickle):
     def step(self, a):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            a (np.ndarray): Continuous control vector in the task action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. True termination is reported separately; truncation is False and
+                external TimeLimit wrappers enforce the horizon.
         """
         if self.ploting:
             joints_dic = {"j1": a[0], "j2": a[1], "j3": a[2], "j4": a[3],
@@ -194,7 +297,12 @@ class AntEnvFullDisabled(mujoco_env.MujocoEnv, utils.EzPickle):
             reward_survive=survive_reward)
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         return np.concatenate([
             self.data.qpos.flat[2:],
             self.data.qvel.flat,
@@ -202,7 +310,12 @@ class AntEnvFullDisabled(mujoco_env.MujocoEnv, utils.EzPickle):
         ])
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         qpos = self.init_qpos + self.np_random.uniform(size=self.model.nq, low=-.1, high=.1)
         qvel = self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
         self.set_state(qpos, qvel)
@@ -216,14 +329,26 @@ class AntEnvFullDisabled(mujoco_env.MujocoEnv, utils.EzPickle):
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         self.viewer.cam.distance = self.model.stat.extent * 0.5
 
 
 class AntEnvPlot(mujoco_env.MujocoEnv, utils.EzPickle):
     """Ant task that includes position coordinates for trajectory visualization."""
     def __init__(self,  ploting=False, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            ploting (bool): Historical task plotting option (spelling retained by the API).
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            None: Initializes the instance.
+        """
         self.ploting = ploting
         if self.ploting:
             self.joints_list = []
@@ -233,6 +358,14 @@ class AntEnvPlot(mujoco_env.MujocoEnv, utils.EzPickle):
     def step(self, a):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            a (np.ndarray): Continuous control vector in the task action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. True termination is reported separately; truncation is False and
+                external TimeLimit wrappers enforce the horizon.
         """
         if self.ploting:
             joints_dic = {"j1": a[0], "j2": a[1], "j3": a[2], "j4": a[3],
@@ -259,7 +392,12 @@ class AntEnvPlot(mujoco_env.MujocoEnv, utils.EzPickle):
             reward_survive=survive_reward)
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         return np.concatenate([
             self.data.qpos.flat[2:],
             self.data.qvel.flat,
@@ -267,7 +405,12 @@ class AntEnvPlot(mujoco_env.MujocoEnv, utils.EzPickle):
         ])
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Positions excluding horizontal translations,
+                velocities, and clipped external contact forces.
+        """
         qpos = self.init_qpos + self.np_random.uniform(size=self.model.nq, low=-.1, high=.1)
         qvel = self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
         self.set_state(qpos, qvel)
@@ -281,5 +424,9 @@ class AntEnvPlot(mujoco_env.MujocoEnv, utils.EzPickle):
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         self.viewer.cam.distance = self.model.stat.extent * 0.5

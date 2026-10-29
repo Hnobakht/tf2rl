@@ -26,6 +26,13 @@ def cli_arguments(options):
     Booleans mean flag presence (including historical ``*-disable`` flags).
     Null leaves a CLI default untouched. Lists become nargs values, dictionaries
     become JSON, and scalar strings retain commas and spaces without shell parsing.
+
+    Args:
+        options (dict): Runner argument names mapped to Hydra scalar or sequence values.
+
+    Returns:
+        list[str]: CLI tokens: True emits a flag, False/None omit it, lists become separate nargs
+            values, dictionaries become JSON, and scalar options use --key=value syntax.
     """
     arguments = []
     for name, value in options.items():
@@ -45,7 +52,15 @@ def cli_arguments(options):
 
 @hydra.main(version_base="1.3", config_path="conf", config_name="config")
 def main(config: DictConfig):
-    """Save the resolved configuration and run the selected experiment."""
+    """Save the resolved configuration and run the selected experiment.
+
+    Args:
+        config (omegaconf.DictConfig): Composed Hydra job configuration with runner and argument
+            values.
+
+    Returns:
+        None.
+    """
     resolved = OmegaConf.to_container(config, resolve=True, throw_on_missing=True)
     runner = resolved["runner"]
     if runner not in _RUNNERS:

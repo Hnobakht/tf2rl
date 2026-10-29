@@ -15,7 +15,11 @@ from tf2rl.utils.logging import initialize_logger
 
 
 def import_tf():
-    """Import TensorFlow and enable GPU memory growth when GPUs are available."""
+    """Import TensorFlow and enable GPU memory growth when GPUs are available.
+
+    Returns:
+        module: TensorFlow module imported in the worker process after device setup.
+    """
     import tensorflow as tf
     if tf.config.experimental.list_physical_devices('GPU'):
         for cur_device in tf.config.experimental.list_physical_devices("GPU"):
@@ -30,42 +34,29 @@ def explorer(global_rb, queue, trained_steps, is_training_done,
     """Collect transitions and store them to prioritized replay buffer.
 
     Args:
-        global_rb: multiprocessing.managers.AutoProxy[PrioritizedReplayBuffer]
-            Prioritized replay buffer sharing with multiple explorers and only one learner.
-            This object is shared over processes, so it must be locked when trying to
-            operate something with `lock` object.
-        queue: multiprocessing.Queue
-            A FIFO shared with the `learner` and `evaluator` to get the latest network weights.
-            This is process safe, so you don't need to lock process when use this.
-        trained_steps: multiprocessing.Value
-            Number of steps to apply gradients.
-        is_training_done: multiprocessing.Event
-            multiprocessing.Event object to share the status of training.
-        lock: multiprocessing.Lock
-            Lock other processes.
-        env_fn: function
-            Method object to generate an environment.
-        policy_fn: function
-            Method object to generate an explorer.
-        set_weights_fn: function
-            Method object to set network weights gotten from queue.
-        noise_level: float
-            Noise level for exploration. For epsilon-greedy policy like DQN variants,
-            this will be epsilon, and if DDPG variants this will be variance for Normal distribution.
-        n_env: int
-            Number of environments to distribute. If this is set to be more than 1,
-            `MultiThreadEnv` will be used.
-        n_thread: int
-            Number of thread used in `MultiThreadEnv`.
-        buffer_size: int
-            Size of local buffer. If this is filled with transitions, add them to `global_rb`
-        episode_max_steps: int
-            Maximum number of steps of an episode.
-        gpu: int
-            GPU id. If this is set to -1, then this process uses only CPU.
+        global_rb (ReplayBuffer proxy): Shared prioritized replay used by explorer and learner
+            processes.
+        queue (multiprocessing.Queue): Queue receiving policy-weight snapshots or evaluation
+            notifications.
+        trained_steps (multiprocessing.Value): Shared learner-update counter read or incremented
+            under the synchronization lock.
+        is_training_done (multiprocessing.Event): Shared stop event set when distributed training
+            should terminate.
+        lock (multiprocessing.Lock): Lock coordinating access to shared replay and synchronization
+            state.
+        env_fn (callable): Zero-argument factory creating a new environment instance.
+        policy_fn (callable): Factory constructing the policy in the worker process.
+        set_weights_fn (callable): Function loading a published weight snapshot into a worker
+            policy.
+        noise_level (float): Exploration-noise scale assigned to this worker.
+        n_env (int): Number of environments handled by one explorer process.
+        n_thread (int): Number of environment worker threads.
+        buffer_size (int): Capacity of the local replay or dynamics buffer.
+        episode_max_steps (int): Maximum number of environment steps collected in one episode.
+        gpu (int): TensorFlow GPU index; a negative index selects the CPU.
 
     Returns:
-        None
+        None.
     """
     import_tf()
     logger = logging.getLogger("tf2rl")
@@ -173,35 +164,27 @@ def learner(global_rb, trained_steps, is_training_done,
     """Update network weights using samples collected by explorers.
 
     Args:
-        global_rb: multiprocessing.managers.AutoProxy[PrioritizedReplayBuffer]
-            Prioritized replay buffer sharing with multiple explorers and only one learner.
-            This object is shared over processes, so it must be locked when trying to
-            operate something with `lock` object.
-        trained_steps: multiprocessing.Value
-            Number of steps to apply gradients.
-        is_training_done: multiprocessing.Event
-            multiprocessing.Event object to share the status of training.
-        lock: multiprocessing.Lock
-            multiprocessing.Lock to lock other processes.
-        env: OpenAI-gym compatible environment object
-        policy_fn: function
-            Method object to generate an explorer.
-        get_weights_fn: function
-            Method object to get network weights and put them to queue.
-        n_training: int
-            Maximum number of times to apply gradients. If number of applying gradients
-            is over this value, training will be done by setting `is_training_done` to `True`
-        update_freq: int
-            Frequency to update parameters, i.e., put network parameters to `queues`
-        evaluation_freq: int
-            Frequency to call `evaluator`.
-        gpu: int
-            GPU id. If this is set to -1, then this process uses only CPU.
-        queues: List
-            List of Queues shared with explorers to send latest network parameters.
+        global_rb (ReplayBuffer proxy): Shared prioritized replay used by explorer and learner
+            processes.
+        trained_steps (multiprocessing.Value): Shared learner-update counter read or incremented
+            under the synchronization lock.
+        is_training_done (multiprocessing.Event): Shared stop event set when distributed training
+            should terminate.
+        lock (multiprocessing.Lock): Lock coordinating access to shared replay and synchronization
+            state.
+        env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+            spaces, and interaction state.
+        policy_fn (callable): Factory constructing the policy in the worker process.
+        get_weights_fn (callable): Function extracting a publishable weight snapshot from a policy.
+        n_training (int): Number of discriminator training attempts per scheduled generator update.
+        update_freq (int): Learner-update interval between weight publications.
+        evaluation_freq (int): Learner-update interval between evaluation notifications.
+        gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+        queues (sequence[multiprocessing.Queue]): Queues used to publish weights to explorers and
+            the evaluator.
 
     Returns:
-        None
+        None.
     """
     tf = import_tf()
     logger = logging.getLogger("tf2rl")
@@ -259,27 +242,24 @@ def evaluator(is_training_done, env, policy_fn, set_weights_fn, queue, gpu,
     """Evaluate trained network weights periodically.
 
     Args:
-        is_training_done: multiprocessing.Event
-            multiprocessing.Event object to share the status of training.
-        env: Open-AI gym compatible environment
-            Environment object.
-        policy_fn: function
-            Method object to generate an explorer.
-        set_weights_fn: function
-            Method object to set network weights gotten from queue.
-        queue: multiprocessing.Queue
-            A FIFO shared with the learner to get the latest network weights.
-            This is process safe, so you don't need to lock process when use this.
-        gpu: int
-            GPU id. If this is set to -1, then this process uses only CPU.
-        save_model_interval: int
-            Interval to save model.
-        n_evaluation: int
-            Number of episodes to evaluate.
-        episode_max_steps: int
-            Maximum number of steps of an episode.
-        show_test_progress: bool
-            If true, `render` will be called to visualize evaluation process.
+        is_training_done (multiprocessing.Event): Shared stop event set when distributed training
+            should terminate.
+        env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+            spaces, and interaction state.
+        policy_fn (callable): Factory constructing the policy in the worker process.
+        set_weights_fn (callable): Function loading a published weight snapshot into a worker
+            policy.
+        queue (multiprocessing.Queue): Queue receiving policy-weight snapshots or evaluation
+            notifications.
+        gpu (int): TensorFlow GPU index; a negative index selects the CPU.
+        save_model_interval (int): Training-step interval between evaluator checkpoint saves.
+        n_evaluation (int): Number of episodes evaluated for each policy snapshot.
+        episode_max_steps (int): Maximum number of environment steps collected in one episode.
+        show_test_progress (bool): Render evaluation episodes while interacting with the
+            environment.
+
+    Returns:
+        None.
     """
     tf = import_tf()
     logger = logging.getLogger("tf2rl")
@@ -338,7 +318,14 @@ def evaluator(is_training_done, env, policy_fn, set_weights_fn, queue, gpu,
 
 
 def apex_argument(parser=None):
-    """Add distributed Ape-X training options and return the argument parser."""
+    """Add distributed Ape-X training options and return the argument parser.
+
+    Args:
+        parser (argparse.ArgumentParser or None): Parser to extend; None constructs a new parser.
+
+    Returns:
+        argparse.ArgumentParser: Parser extended with the supported component options.
+    """
     if parser is None:
         parser = argparse.ArgumentParser(conflict_handler='resolve')
     parser.add_argument('--n-training', type=int, default=1e7,
@@ -374,7 +361,17 @@ def apex_argument(parser=None):
 
 def prepare_experiment(env, args):
     # Manager to share PER between a learner and explorers
-    """Create shared replay storage, queues, locks, and counters for Ape-X workers."""
+    """Create shared replay storage, queues, locks, and counters for Ape-X workers.
+
+    Args:
+        env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+            spaces, and interaction state.
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+
+    Returns:
+        tuple: Shared replay proxy, explorer/evaluator queues, training-stop event, synchronization
+            lock, and shared learner-update counter.
+    """
     SyncManager.register('PrioritizedReplayBuffer',
                          PrioritizedReplayBuffer)
     manager = SyncManager()
@@ -402,7 +399,19 @@ def prepare_experiment(env, args):
 
 
 def run(args, env_fn, policy_fn, get_weights_fn, set_weights_fn):
-    """Launch distributed Ape-X learner, explorer, and evaluator processes."""
+    """Launch distributed Ape-X learner, explorer, and evaluator processes.
+
+    Args:
+        args (argparse.Namespace): Parsed experiment options used to configure this operation.
+        env_fn (callable): Zero-argument factory creating a new environment instance.
+        policy_fn (callable): Factory constructing the policy in the worker process.
+        get_weights_fn (callable): Function extracting a publishable weight snapshot from a policy.
+        set_weights_fn (callable): Function loading a published weight snapshot into a worker
+            policy.
+
+    Returns:
+        None.
+    """
     initialize_logger(
         logging_level=logging.getLevelName(args.logging_level))
 

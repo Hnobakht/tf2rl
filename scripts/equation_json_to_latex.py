@@ -30,12 +30,32 @@ _ARITY = {
 
 
 def _finite(value):
-    """Return whether a value is a finite built-in integer or float."""
+    """Return whether a value is a finite built-in integer or float.
+
+    Args:
+        value (object): Candidate numeric graph attribute; only finite built-in int and float values
+            are accepted.
+
+    Returns:
+        bool: Whether value is a finite built-in integer or float; booleans and nonnumeric values
+            are rejected.
+    """
     return type(value) in (int, float) and math.isfinite(value)
 
 
 def validate_graph(graph):
-    """Require the version-1, topologically ordered graph produced by EQN export."""
+    """Require the version-1, topologically ordered graph produced by EQN export.
+
+    Args:
+        graph (dict): Exported equation graph containing inputs, nodes, named outputs, and metadata.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: Expected a version-1 equation graph. inputs must be a list of names. Expected
+            nonempty nodes and outputs. Output references an invalid node.
+    """
     if not isinstance(graph, dict) or graph.get("version") != 1:
         raise ValueError("Expected a version-1 equation graph")
     inputs, nodes, outputs = (graph.get(key) for key in ("inputs", "nodes", "outputs"))
@@ -73,7 +93,14 @@ def validate_graph(graph):
 
 
 def _escape(text):
-    """Escape LaTeX special characters and replace line breaks with spaces."""
+    """Escape LaTeX special characters and replace line breaks with spaces.
+
+    Args:
+        text (str): Text to escape for safe LaTeX rendering.
+
+    Returns:
+        str: LaTeX-escaped text with newline characters replaced by spaces.
+    """
     replacements = {
         "\\": r"\textbackslash{}",
         "{": r"\{",
@@ -90,7 +117,16 @@ def _escape(text):
 
 
 def _input_name(name):
-    """Map an input name to a familiar mathematical symbol or escaped LaTeX text."""
+    """Map an input name to a familiar mathematical symbol or escaped LaTeX text.
+
+    Args:
+        name (str): Exported equation input label, formatted as a mathematical coordinate or escaped
+            text.
+
+    Returns:
+        str: Mathematical coordinate notation for recognized input names, otherwise safely escaped
+            text.
+    """
     pendulum = {
         "cos_theta": r"\cos(\theta)",
         "sin_theta": r"\sin(\theta)",
@@ -107,7 +143,17 @@ def _input_name(name):
 
 
 def _number(value, precision):
-    """Format a coefficient as LaTeX, optionally rounding its significant digits."""
+    """Format a coefficient as LaTeX, optionally rounding its significant digits.
+
+    Args:
+        value (float or int): Finite coefficient to express in decimal or scientific notation.
+        precision (int or None): Significant-digit limit; None preserves the unrounded numeric
+            string.
+
+    Returns:
+        str: Finite numeric coefficient formatted to the selected precision, using LaTeX scientific
+            notation when necessary.
+    """
     text = repr(value) if precision is None else format(value, f".{precision}g")
     if "e" in text.lower():
         mantissa, exponent = text.lower().split("e")
@@ -116,7 +162,16 @@ def _number(value, precision):
 
 
 def _affine_terms(node, args, number):
-    """Format nonzero affine coefficients and bias as signed LaTeX terms."""
+    """Format nonzero affine coefficients and bias as signed LaTeX terms.
+
+    Args:
+        node (dict): Equation graph node being formatted or inspected.
+        args (sequence[str]): Already formatted LaTeX expressions for the node operands.
+        number (callable): Formatter converting numeric coefficients into LaTeX text.
+
+    Returns:
+        list[str]: Signed affine-term fragments in display order, omitting zero coefficients.
+    """
     terms = [
         (w < 0, rf"{number(abs(w))}\,\left({arg}\right)")
         for w, arg in zip(node["weights"], args)
@@ -131,7 +186,16 @@ def _affine_terms(node, args, number):
 
 
 def _expression(node, args, number):
-    """Render one supported equation graph operation as LaTeX."""
+    """Render one supported equation graph operation as LaTeX.
+
+    Args:
+        node (dict): Equation graph node being formatted or inspected.
+        args (sequence[str]): Already formatted LaTeX expressions for the node operands.
+        number (callable): Formatter converting numeric coefficients into LaTeX text.
+
+    Returns:
+        str: LaTeX expression for the supplied node and already-formatted operands.
+    """
     op = node["op"]
     if op == "affine":
         return "".join(_affine_terms(node, args, number))
@@ -155,7 +219,26 @@ def _expression(node, args, number):
 def graph_to_latex(
     graph, *, precision=None, expanded=False, select=None, document=False, max_chars=200000
 ):
-    """Render equations without changing operators, thresholds or graph structure."""
+    """Render equations without changing operators, thresholds or graph structure.
+
+    Args:
+        graph (dict): Exported equation graph containing inputs, nodes, named outputs, and metadata.
+        precision (int or None): Optional significant-digit limit for coefficients; None avoids
+            coefficient rounding.
+        expanded (bool): Expand shared graph terms instead of using intermediate definitions.
+        select (str or None): Named equation output to render.
+        document (bool): Wrap the generated equations in a complete LaTeX document.
+        max_chars (int): Maximum length allowed for a rendered expanded expression.
+
+    Returns:
+        str: Selected equation rendered as LaTeX, optionally including shared intermediate
+            definitions or a complete document.
+
+    Raises:
+        ValueError: precision must be between 1 and 17 significant digits. max_chars must be
+            positive. Expanded expression exceeds --max-chars; use shared terms (default). LaTeX
+            exceeds --max-chars; select one output or use shared terms.
+    """
     validate_graph(graph)
     if precision is not None and not 1 <= precision <= 17:
         raise ValueError("precision must be between 1 and 17 significant digits")
@@ -218,7 +301,11 @@ def graph_to_latex(
 
 
 def main():
-    """Convert equation JSON files to LaTeX using the selected formatting options."""
+    """Convert equation JSON files to LaTeX using the selected formatting options.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

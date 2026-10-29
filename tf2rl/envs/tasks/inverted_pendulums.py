@@ -6,13 +6,28 @@ class InvertedDoublePendulumEnvLonglink(mujoco_env.MujocoEnv, utils.EzPickle):
 
     """Double-pendulum balance task using longer links."""
     def __init__(self, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            None: Initializes the instance.
+        """
         mujoco_env.MujocoEnv.__init__(self, 'inverted_double_pendulum_longlink.xml', 5, render_mode=render_mode)
         utils.EzPickle.__init__(self)
 
     def step(self, action):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. True termination is reported separately; truncation is False and
+                external TimeLimit wrappers enforce the horizon.
         """
         self.do_simulation(action, self.frame_skip)
         ob = self._get_obs()
@@ -26,7 +41,12 @@ class InvertedDoublePendulumEnvLonglink(mujoco_env.MujocoEnv, utils.EzPickle):
         return ob, r, bool(done), False, {}
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Cart position, joint-angle sine/cosine features,
+                clipped velocities, and clipped constraint forces.
+        """
         return np.concatenate([
             self.data.qpos[:1],  # cart x pos
             np.sin(self.data.qpos[1:]),  # link angles
@@ -36,7 +56,12 @@ class InvertedDoublePendulumEnvLonglink(mujoco_env.MujocoEnv, utils.EzPickle):
         ]).ravel()
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Cart position, joint-angle sine/cosine features,
+                clipped velocities, and clipped constraint forces.
+        """
         self.set_state(
             self.init_qpos + self.np_random.uniform(low=-.1, high=.1, size=self.model.nq),
             self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
@@ -44,7 +69,11 @@ class InvertedDoublePendulumEnvLonglink(mujoco_env.MujocoEnv, utils.EzPickle):
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         v = self.viewer
         v.cam.trackbodyid = 0
         v.cam.distance = self.model.stat.extent * 0.5
@@ -54,13 +83,28 @@ class InvertedDoublePendulumEnvLimitjoint(mujoco_env.MujocoEnv, utils.EzPickle):
 
     """Double-pendulum balance task with restricted joint motion."""
     def __init__(self, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            None: Initializes the instance.
+        """
         mujoco_env.MujocoEnv.__init__(self, 'inverted_double_pendulum_limitjoint.xml', 5, render_mode=render_mode)
         utils.EzPickle.__init__(self)
 
     def step(self, action):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. True termination is reported separately; truncation is False and
+                external TimeLimit wrappers enforce the horizon.
         """
         self.do_simulation(action, self.frame_skip)
         ob = self._get_obs()
@@ -74,7 +118,12 @@ class InvertedDoublePendulumEnvLimitjoint(mujoco_env.MujocoEnv, utils.EzPickle):
         return ob, r, bool(done), False, {}
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Cart position, joint-angle sine/cosine features,
+                clipped velocities, and clipped constraint forces.
+        """
         return np.concatenate([
             self.data.qpos[:1],  # cart x pos
             np.sin(self.data.qpos[1:]),  # link angles
@@ -84,7 +133,12 @@ class InvertedDoublePendulumEnvLimitjoint(mujoco_env.MujocoEnv, utils.EzPickle):
         ]).ravel()
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Cart position, joint-angle sine/cosine features,
+                clipped velocities, and clipped constraint forces.
+        """
         self.set_state(
             self.init_qpos + self.np_random.uniform(low=-.1, high=.1, size=self.model.nq),
             self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
@@ -92,7 +146,11 @@ class InvertedDoublePendulumEnvLimitjoint(mujoco_env.MujocoEnv, utils.EzPickle):
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         v = self.viewer
         v.cam.trackbodyid = 0
         v.cam.distance = self.model.stat.extent * 0.5
@@ -103,13 +161,28 @@ class InvertedDoublePendulumEnvFat(mujoco_env.MujocoEnv, utils.EzPickle):
 
     """Double-pendulum balance task using the thicker-link model."""
     def __init__(self, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            None: Initializes the instance.
+        """
         mujoco_env.MujocoEnv.__init__(self, 'inverted_double_pendulum_fat.xml', 5, render_mode=render_mode)
         utils.EzPickle.__init__(self)
 
     def step(self, action):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. True termination is reported separately; truncation is False and
+                external TimeLimit wrappers enforce the horizon.
         """
         self.do_simulation(action, self.frame_skip)
         ob = self._get_obs()
@@ -123,7 +196,12 @@ class InvertedDoublePendulumEnvFat(mujoco_env.MujocoEnv, utils.EzPickle):
         return ob, r, bool(done), False, {}
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Cart position, joint-angle sine/cosine features,
+                clipped velocities, and clipped constraint forces.
+        """
         return np.concatenate([
             self.data.qpos[:1],  # cart x pos
             np.sin(self.data.qpos[1:]),  # link angles
@@ -133,7 +211,12 @@ class InvertedDoublePendulumEnvFat(mujoco_env.MujocoEnv, utils.EzPickle):
         ]).ravel()
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Cart position, joint-angle sine/cosine features,
+                clipped velocities, and clipped constraint forces.
+        """
         self.set_state(
             self.init_qpos + self.np_random.uniform(low=-.1, high=.1, size=self.model.nq),
             self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
@@ -141,7 +224,11 @@ class InvertedDoublePendulumEnvFat(mujoco_env.MujocoEnv, utils.EzPickle):
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         v = self.viewer
         v.cam.trackbodyid = 0
         v.cam.distance = self.model.stat.extent * 0.5
@@ -153,7 +240,14 @@ class InvertedTriplePendulumEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
     """Cart-based balance task with three pendulum links."""
     def __init__(self, render_mode=None):
-        """Load the task's MuJoCo model and set the number of simulation frames per action."""
+        """Load the task's MuJoCo model and set the number of simulation frames per action.
+
+        Args:
+            render_mode (str or None): Gymnasium rendering mode such as human or rgb_array.
+
+        Returns:
+            NoReturn: The base or unsupported implementation always raises NotImplementedError.
+        """
         raise NotImplemented
         mujoco_env.MujocoEnv.__init__(self, 'inverted_triple_pendulum.xml', 5, render_mode=render_mode)
         utils.EzPickle.__init__(self)
@@ -161,6 +255,14 @@ class InvertedTriplePendulumEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def step(self, action):
         """Advance the task with the given action and return observation, reward, episode flags, and
         info.
+
+        Args:
+            action (array_like): Single action in the environment action space.
+
+        Returns:
+            tuple[np.ndarray, float, bool, bool, dict]: Observation, reward, terminated, truncated, and
+                reward diagnostics. True termination is reported separately; truncation is False and
+                external TimeLimit wrappers enforce the horizon.
         """
         self.do_simulation(action, self.frame_skip)
         ob = self._get_obs()
@@ -174,7 +276,12 @@ class InvertedTriplePendulumEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return ob, r, bool(done), False, {}
 
     def _get_obs(self):
-        """Assemble the task observation from the current simulator state."""
+        """Assemble the task observation from the current simulator state.
+
+        Returns:
+            np.ndarray: Flat observation vector. Cart position, joint-angle sine/cosine features,
+                clipped velocities, and clipped constraint forces.
+        """
         return np.concatenate([
             self.data.qpos[:1],  # cart x pos
             np.sin(self.data.qpos[1:]),  # link angles
@@ -184,7 +291,12 @@ class InvertedTriplePendulumEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         ]).ravel()
 
     def reset_model(self):
-        """Randomize the simulator's initial state and return the resulting observation."""
+        """Randomize the simulator's initial state and return the resulting observation.
+
+        Returns:
+            np.ndarray: Flat observation vector. Cart position, joint-angle sine/cosine features,
+                clipped velocities, and clipped constraint forces.
+        """
         self.set_state(
             self.init_qpos + self.np_random.uniform(low=-.1, high=.1, size=self.model.nq),
             self.init_qvel + self.np_random.standard_normal(self.model.nv) * .1
@@ -192,7 +304,11 @@ class InvertedTriplePendulumEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return self._get_obs()
 
     def viewer_setup(self):
-        """Configure the camera for this MuJoCo task."""
+        """Configure the camera for this MuJoCo task.
+
+        Returns:
+            None.
+        """
         v = self.viewer
         v.cam.trackbodyid = 0
         v.cam.distance = self.model.stat.extent * 0.5

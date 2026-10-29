@@ -20,7 +20,18 @@ class PPO(VPG):
             name="PPO",
             target_kl=0.075,
             **kwargs):
-        """Configure the agent's networks, optimizers, and training hyperparameters."""
+        """Configure the agent's networks, optimizers, and training hyperparameters.
+
+        Args:
+            clip (bool): Enable the clipped PPO likelihood-ratio objective.
+            clip_ratio (float): PPO ratio-clipping tolerance around one.
+            name (str): Name assigned to the model, operation, or registered component.
+            target_kl (float): Approximate KL threshold used to stop further PPO minibatch updates.
+            **kwargs (dict): Additional keyword arguments forwarded to VPG construction.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(name=name, **kwargs)
         self.clip = clip
         self.clip_ratio = clip_ratio
@@ -28,12 +39,34 @@ class PPO(VPG):
         assert self.horizon % self.batch_size == 0 , "The horizon % batch_size should be 0. [__init__ PPO]"
 
     def should_stop_update(self, diagnostics):
-        """PPO stops its rollout update when the estimated KL exceeds its target."""
+        """PPO stops its rollout update when the estimated KL exceeds its target.
+
+        Args:
+            diagnostics (array_like): Update diagnostics; on-policy agents place estimated KL at index
+                two.
+
+        Returns:
+            tf.Tensor: Scalar boolean indicating whether diagnostics[2] exceeds target_kl.
+        """
         return diagnostics[2] > self.target_kl
 
     @tf.function(reduce_retracing=True)
     def train_tensor(self, states, actions, advantages, logp_olds, returns):
-        """Apply PPO losses without transferring minibatch diagnostics to the host."""
+        """Apply PPO losses without transferring minibatch diagnostics to the host.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            advantages (array_like): Fixed policy advantages, one value per sampled transition.
+            logp_olds (array_like): Collection-time log probabilities of the actions, held fixed during
+                updates.
+            returns (array_like): Discounted return targets, one value per transition.
+
+        Returns:
+            tf.Tensor: Diagnostics of shape (3,): actor loss, critic loss, and estimated KL, after one
+                minibatch update.
+        """
         if self.actor_critic is not None:
             actor_loss, critic_loss, _, _, _, kl = self._train_actor_critic_body(
                 states, actions, advantages, logp_olds, returns)
@@ -45,7 +78,21 @@ class PPO(VPG):
 
     def train(self, states, actions, advantages, logp_olds, returns):
         # Train actor and critic
-        """Update the PPO policy and value function from a rollout batch."""
+        """Update the PPO policy and value function from a rollout batch.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            advantages (array_like): Fixed policy advantages, one value per sampled transition.
+            logp_olds (array_like): Collection-time log probabilities of the actions, held fixed during
+                updates.
+            returns (array_like): Discounted return targets, one value per transition.
+
+        Returns:
+            tuple: Actor loss tensor, critic loss tensor, and NumPy estimated KL after one minibatch
+                update.
+        """
         if self.actor_critic is not None:
             actor_loss, critic_loss, logp_news, ratio, ent, kl = self._train_actor_critic_body(
                 states, actions, advantages, logp_olds, returns)
@@ -78,7 +125,24 @@ class PPO(VPG):
 
     def train_actor(self, states, actions, advantages, logp_olds, returns):
         # Train actor and critic
-        """Update the PPO policy from observations, actions, advantages, and old log probabilities.
+        """Update the PPO policy from observations, actions, advantages, and old log
+        probabilities.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            advantages (array_like): Fixed policy advantages, one value per sampled transition.
+            logp_olds (array_like): Collection-time log probabilities of the actions, held fixed during
+                updates.
+            returns (array_like): Discounted return targets, one value per transition. This
+                implementation does not read this argument.
+
+        Returns:
+            tuple: Actor loss tensor and NumPy estimated KL; only actor parameters are updated.
+
+        Raises:
+            NotImplementedError: Shared actor-critic requires a joint train() update.
         """
         if self.actor_critic is not None:
             raise NotImplementedError("Shared actor-critic requires a joint train() update")
@@ -108,7 +172,18 @@ class PPO(VPG):
 
     def train_critic(self, states, returns):
         # Train actor and critic
-        """Update the value function against the supplied return targets."""
+        """Update the value function against the supplied return targets.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            returns (array_like): Discounted return targets, one value per transition.
+
+        Returns:
+            tf.Tensor: Scalar value-regression loss after updating the critic.
+
+        Raises:
+            NotImplementedError: Shared actor-critic requires a joint train() update.
+        """
         if self.actor_critic is not None:
             raise NotImplementedError("Shared actor-critic requires a joint train() update")
         else:
@@ -119,7 +194,25 @@ class PPO(VPG):
 
     @tf.function
     def _train_actor_critic_body(self, states, actions, advantages, logp_olds, returns):
-        """Update the shared actor-critic model using PPO losses."""
+        """Update the shared actor-critic model using PPO losses.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            advantages (array_like): Fixed policy advantages, one value per sampled transition.
+            logp_olds (array_like): Collection-time log probabilities of the actions, held fixed during
+                updates.
+            returns (array_like): Discounted return targets, one value per transition.
+
+        Returns:
+            tuple[tf.Tensor, ...]: Actor loss, critic loss, new action log probabilities, probability
+                ratios, mean entropy, and estimated KL after a shared-network update.
+
+        Raises:
+            NotImplementedError: The requested operation or argument combination is unsupported by this
+                component.
+        """
         with tf.device(self.device):
             with tf.GradientTape() as tape:
                 _, _, current_V = self.actor_critic(states)
@@ -159,7 +252,24 @@ class PPO(VPG):
 
     @tf.function
     def _train_actor_body(self, states, actions, advantages, logp_olds):
-        """Apply one policy-gradient update and return the optimization diagnostics."""
+        """Apply one policy-gradient update and return the optimization diagnostics.
+
+        Args:
+            states (array_like): Observation batch shaped (batch, *state_shape).
+            actions (array_like): Actions aligned with the observation batch; continuous actions have a
+                final action_dim axis.
+            advantages (array_like): Fixed policy advantages, one value per sampled transition.
+            logp_olds (array_like): Collection-time log probabilities of the actions, held fixed during
+                updates.
+
+        Returns:
+            tuple[tf.Tensor, ...]: Actor loss, new log probabilities, probability ratios, mean entropy,
+                and estimated KL after an actor update.
+
+        Raises:
+            NotImplementedError: The requested operation or argument combination is unsupported by this
+                component.
+        """
         with tf.device(self.device):
             # Update actor
             with tf.GradientTape() as tape:

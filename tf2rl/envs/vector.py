@@ -19,6 +19,26 @@ def make_vector_env(
 
     MJWarp is optional and imported only when selected. kwargs are forwarded to
     the selected backend (Gymnasium constructor options for the CPU backend).
+
+    Args:
+        env_id (str): Registered Gymnasium environment identifier.
+        num_envs (int): Number of independent simulation worlds.
+        backend (str): Simulation backend: gymnasium or mjwarp.
+        tensors (bool): Export observations and step results as TensorFlow tensors instead of NumPy
+            arrays.
+        device (str): TensorFlow or Warp device identifier appropriate to this operation.
+        absorbing (bool): Enable DAC absorbing-state transitions and their corresponding
+            interpretation.
+        absorbing_indicator (float): Positive final-coordinate value used to identify the canonical
+            absorbing observation.
+        **kwargs (dict): Additional keyword arguments forwarded to the wrapped operation.
+
+    Returns:
+        gym.vector.VectorEnv: Same-step-autoreset batched environment on the requested backend,
+            optionally wrapped for tensors and absorbing observations.
+
+    Raises:
+        ImportError: MJWarp requires the optional 'mjwarp' dependencies.
     """
     if backend == "mjwarp":
         try:
@@ -50,10 +70,31 @@ class TensorVectorEnv(gym.vector.VectorWrapper):
     """Expose native CPU vector environments using the same eager tensor API."""
 
     def __init__(self, env, device):
+        """Initialize TensorVectorEnv and its configuration.
+
+        Args:
+            env (gym.Env or gym.vector.VectorEnv): Environment instance providing observations, action
+                spaces, and interaction state.
+            device (str): TensorFlow or Warp device identifier appropriate to this operation.
+
+        Returns:
+            None: Initializes the instance.
+        """
         super().__init__(env)
         self.device = device.replace("cuda:", "/GPU:")
 
     def _tensor(self, value):
+        """Convert a wrapped environment array to a boolean or float32 tensor on the selected
+        device.
+
+        Args:
+            value (array_like): Value to convert, normalize, or store in the representation required by
+                this operation.
+
+        Returns:
+            tf.Tensor: Input converted on the configured device to bool for boolean arrays, otherwise
+                float32.
+        """
         import tensorflow as tf
 
         value = np.asarray(value)
@@ -61,10 +102,31 @@ class TensorVectorEnv(gym.vector.VectorWrapper):
             return tf.convert_to_tensor(value, tf.bool if value.dtype == bool else tf.float32)
 
     def reset(self, **kwargs):
+        """Reset all worlds and convert their initial observations to tensors.
+
+        Args:
+            **kwargs (dict): Reset options forwarded to the wrapped environment, such as seed and
+                options.
+
+        Returns:
+            tuple[tf.Tensor, dict]: Batched initial observations and reset information returned by the
+                wrapped vector environment.
+        """
         obs, info = self.env.reset(**kwargs)
         return self._tensor(obs), info
 
     def step(self, actions):
+        """Clip and execute batched tensor actions, then expose tensor results and physical
+        successor observations.
+
+        Args:
+            actions (tf.Tensor): Batched actions exposing .numpy(), with shape (num_envs,
+                *action_shape). Continuous actions are clipped before stepping.
+
+        Returns:
+            tuple: Tensor observations, rewards, terminations, truncations, and info. info["final_obs"]
+                contains dense physical successor observations before autoreset.
+        """
         actions = actions.numpy()
         if isinstance(self.single_action_space, gym.spaces.Box):
             actions = np.clip(actions, self.single_action_space.low, self.single_action_space.high)
